@@ -73,8 +73,10 @@ class AudioEngine {
         if (!this.isRecording) return;
         this.mediaRecorder.stop();
         this.isRecording = false;
+        // stopPlaybackTicker() is NOT called here because we want timeDisplay to stay valid 
+        // until we reset or new action starts? 
+        // Actually ticker should stop.
         this.stopPlaybackTicker();
-        // Analyser will be disconnected when new source is created
     }
 
     play() {

@@ -140,15 +140,35 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
+    // --- SDK Alignment & Boilerplate ---
+    
+    // Check if running in R1 environment
+    if (typeof PluginMessageHandler !== 'undefined') {
+        console.log('Running as R1 Creation');
+    } else {
+        console.log('Running in browser mode');
+    }
+
+    // Handle Plugin Messages (Required for full SDK support)
+    window.onPluginMessage = function(data) {
+        console.log('Received plugin message:', data);
+        // Handle potential messages from OS/System
+    };
+
     // --- Hardware Inputs (Rabbit r1) ---
 
     // SIDE BUTTON
     window.addEventListener('sideClick', async () => {
-        await ensureInit();
+        // Ensure Audio Context is ready (User Gesture workaround)
+        if (!initialized) {
+            await ensureInit(); 
+            // Note: If this event is not trusted, init might fail. 
+            // We rely on previous touch or system allow-list.
+        }
 
-        // Safety: If Recording, always STOP
+        // Safety: If Recording, always STOP and switch to Scrub
         if (audioEngine.isRecording) {
-            audioEngine.stopRecording();
+            handleRecordingStopForScrub();
             return;
         }
 
@@ -176,9 +196,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     function handleScroll(delta) {
         if (!initialized) return;
 
+        // Auto-stop recording if scrolling
+        if (audioEngine.isRecording) {
+            handleRecordingStopForScrub();
+            // We can't scrub yet, buffer isn't ready. 
+            // Optional: Queue the scrub?
+            return;
+        }
+
         if (currentMode === 'DECK') {
             // Updated to use manipulate (scrub/speed) based on mode
-             if (audioEngine.isRecording || audioEngine.isPlaying || audioEngine.pausedAt > 0 || audioEngine.audioBuffer) {
+             if (audioEngine.isPlaying || audioEngine.pausedAt > 0 || audioEngine.audioBuffer) {
                 audioEngine.manipulate(delta, wheelMode); 
                 updateStatusForScrub();
             }
@@ -186,6 +214,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             // Navigate List
             tapeListContainer.scrollTop += (delta * -20);
         }
+    }
+
+    async function handleRecordingStopForScrub() {
+        audioEngine.stopRecording();
+        wheelMode = 'SCRUB'; // Force Scrub mode for immediate review
+        wheelModeDisplay.innerText = `MODE: ${wheelMode}`;
+        statusText.innerText = "BUFFERING...";
+        // The engine's onstop handler will fire, audioBuffer will be populated.
+        // User can scroll again to move.
     }
 
     function updateStatusForScrub() {
