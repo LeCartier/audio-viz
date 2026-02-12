@@ -68,19 +68,21 @@ body {
 }
 
 .controls-overlay {
+    position: absolute;
+    bottom: 8px;
+    left: 0;
     width: 100%;
-    height: 44px;
     display: flex;
     justify-content: space-between;
     align-items: center;
     padding: 0 10px;
-    background: #000;
-    border-top: 1px solid #333;
-    flex-shrink: 0;
+    pointer-events: none;
+    z-index: 50;
 }
 
 .cmd-btn {
-    background: #222;
+    pointer-events: auto;
+    background: rgba(0, 0, 0, 0.7);
     border: 1px solid #555;
     color: #ccc;
     padding: 6px 10px;
