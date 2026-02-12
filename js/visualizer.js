@@ -7,12 +7,10 @@ class Visualizer {
         this.rotation = 0;
         this.animationId = null;
         
-        // Reel constants
-        this.reelRadius = 40;
-        this.spokeCount = 3;
-        this.reelCenterY = 100;
-        this.leftReelX = 60;
-        this.rightReelX = 180;
+        // Single Reel Configuration
+        this.centerX = this.width / 2;
+        this.centerY = this.height / 2; // Centered
+        this.maxRadius = Math.min(this.width, this.height) * 0.45; // Almost full screen
     }
 
     start(audioEngine) {
@@ -27,124 +25,98 @@ class Visualizer {
 
     draw() {
         // Clear background
-        this.ctx.fillStyle = '#111'; // Match CSS
+        this.ctx.fillStyle = '#111'; 
         this.ctx.fillRect(0, 0, this.width, this.height);
 
         const currentTime = this.audioEngine.getCurrentTime();
         
-        // Use fixed Max tape duration for visual consistency or current duration if playing back?
-        // Let's use a virtual max capacity logic so it looks like a real reel
-        const maxCapacity = this.audioEngine.maxTapeDuration || 300; 
-        const progress = Math.min(1, Math.max(0, currentTime / maxCapacity));
-        
-        // Calculate Tape Amount (Visual Radius)
-        const minTape = 15;
-        const maxTape = 38;
-        const leftRadius = maxTape - (progress * (maxTape - minTape));
-        const rightRadius = minTape + (progress * (maxTape - minTape));
+        // Rotation Logic
+        // Angle = Time * Speed. 
+        // Note: PlaybackRate might be negative if scrubbing backwards? 
+        // getCurrentTime() is absolute position. We need continuous rotation for visual flux?
+        // Actually, for a tape reel, the position determines the angle.
+        // Angle = (Time / MaxTime) * TotalRotations * 2PI ?
+        // Or simpler: Angle = Time * Constant.
+        const rotationAngle = currentTime * 2; 
 
-        // Calculate Rotation
-        // Use currentTime (which works for Rec & Play)
-        // Angle = Time * SpeedConstant
-        const rotationAngle = currentTime * 5; 
-
-        // Draw Left Reel (Supply)
-        this.drawReel(this.leftReelX, this.reelCenterY, this.reelRadius, leftRadius, -rotationAngle);
-
-        // Draw Right Reel (Takeup)
-        this.drawReel(this.rightReelX, this.reelCenterY, this.reelRadius, rightRadius, -rotationAngle);
-
-        // Draw Tape connecting them
-        this.drawTapePoints(this.leftReelX, this.rightReelX, this.reelCenterY, leftRadius, rightRadius);
-
-        // Draw VU Meter or Overlay
-        this.drawVUMeter();
+        this.drawSingleReel(this.centerX, this.centerY, this.maxRadius, rotationAngle);
     }
 
-    drawReel(x, y, hubRadius, tapeRadius, angle) {
+    drawSingleReel(x, y, radius, angle) {
         const ctx = this.ctx;
         
-        // Draw Tape Pack
-        ctx.beginPath();
-        ctx.arc(x, y, tapeRadius, 0, Math.PI * 2);
-        ctx.fillStyle = '#3a2a2a'; // Brown tape color
-        ctx.fill();
-        ctx.strokeStyle = '#220';
-        ctx.stroke();
-
-        // Draw Hub (Metal)
-        ctx.beginPath();
-        ctx.arc(x, y, hubRadius, 0, Math.PI * 2);
-        ctx.fillStyle = '#888'; // Metal gray
-        ctx.fill();
-        ctx.strokeStyle = '#aaa';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-
-        // Draw Spokes (Rotating)
         ctx.save();
         ctx.translate(x, y);
         ctx.rotate(angle);
-        
+
+        // 1. Outer Rim
         ctx.beginPath();
-        for (let i = 0; i < this.spokeCount; i++) {
-            const rad = (i * 2 * Math.PI) / this.spokeCount;
-            ctx.moveTo(0, 0);
-            ctx.lineTo(Math.cos(rad) * hubRadius * 0.9, Math.sin(rad) * hubRadius * 0.9);
-        }
-        ctx.strokeStyle = '#111';
+        ctx.arc(0, 0, radius, 0, Math.PI * 2);
+        ctx.fillStyle = '#222';
+        ctx.fill();
+        ctx.strokeStyle = '#444';
         ctx.lineWidth = 4;
         ctx.stroke();
 
-        // Screw in middle
+        // 2. Tape Mass (Visual representation of "Fullness" could vary, 
+        // but user asked for "Visual dot that indicates spinning")
+        // Let's draw the "Tape" texture
         ctx.beginPath();
-        ctx.arc(0, 0, 5, 0, Math.PI * 2);
+        ctx.arc(0, 0, radius * 0.9, 0, Math.PI * 2);
+        ctx.fillStyle = '#3a2a2a'; // Tape color
+        ctx.fill();
+
+        // 3. Metal Spokes (The Reel)
+        // Draw 3 large aesthetic cutouts
+        const spokeCount = 3;
+        ctx.fillStyle = '#666'; // Metal
+        ctx.beginPath();
+        for (let i = 0; i < spokeCount; i++) {
+            const rad = (i * 2 * Math.PI) / spokeCount;
+            // Draw a wedge shape or circle for spoke hole?
+            // Let's do huge circular cutouts like a classic reel
+            const cutoutX = Math.cos(rad) * (radius * 0.5);
+            const cutoutY = Math.sin(rad) * (radius * 0.5);
+            ctx.moveTo(cutoutX, cutoutY);
+            ctx.arc(cutoutX, cutoutY, radius * 0.25, 0, Math.PI * 2);
+        }
+        // Use blending to punch out holes? Or just draw the Hub on top.
+        // Let's just draw the Hub structure itself.
+        
+        // Reset and draw Hub structure
+        ctx.fillStyle = '#888'; // Hub Color
+        ctx.beginPath();
+        ctx.arc(0, 0, radius * 0.3, 0, Math.PI * 2); // Center Hub
+        ctx.fill();
+
+        // Spokes connecting Hub to Rim
+        ctx.strokeStyle = '#888';
+        ctx.lineWidth = 15;
+        ctx.beginPath();
+        for (let i = 0; i < spokeCount; i++) {
+            const rad = (i * 2 * Math.PI) / spokeCount;
+            ctx.moveTo(0, 0);
+            ctx.lineTo(Math.cos(rad) * radius, Math.sin(rad) * radius);
+        }
+        ctx.stroke();
+
+        // 4. Visual Dot for Spinning (Requested specifically)
+        // A bright dot on the rim or near it
+        ctx.beginPath();
+        const dotDistance = radius * 0.8;
+        ctx.arc(dotDistance, 0, 8, 0, Math.PI * 2);
+        ctx.fillStyle = '#ff0000'; // Red Dot
+        ctx.fill();
+
+        // Center Screw
+        ctx.beginPath();
+        ctx.arc(0, 0, 8, 0, Math.PI * 2);
         ctx.fillStyle = '#ccc';
         ctx.fill();
 
         ctx.restore();
-    }
-
-    drawTapePoints(x1, x2, y, r1, r2) {
-        const ctx = this.ctx;
         
-        // Simple straight line tape path for now, maybe sag later
-        // Tangent points roughly at bottom for "heads"
-        ctx.beginPath();
-        ctx.moveTo(x1, y + r1);
-        ctx.lineTo(70, y + 80); // Guide
-        ctx.lineTo(170, y + 80); // Guide
-        ctx.lineTo(x2, y + r2);
-        
-        ctx.strokeStyle = '#3a2a2a';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-
-        // Tape Head block
-        ctx.fillStyle = '#bbb'; 
-        ctx.fillRect(90, y + 60, 60, 30);
-    }
-
-    drawVUMeter() {
-        const data = this.audioEngine.getAnalyserData();
-        // Simple bar based on average volume
-        let sum = 0;
-        for(let i = 0; i < data.length; i++) {
-            sum += data[i];
-        }
-        const average = sum / data.length;
-        
-        // Draw needle or bar
-        const width = 100;
-        const height = 5;
-        const x = (this.width - width) / 2;
-        const y = 170;
-
-        this.ctx.fillStyle = '#333';
-        this.ctx.fillRect(x, y, width, height);
-
-        const fillWidth = (average / 128) * width; // 128 is approx half
-        this.ctx.fillStyle = this.audioEngine.isRecording ? '#f33' : '#3f3';
-        this.ctx.fillRect(x, y, Math.min(width, fillWidth), height);
+        // Optional: Simple VU Meter arc around the wheel?
+        // Or overlay outside
     }
 }

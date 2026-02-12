@@ -11,20 +11,38 @@
         <!-- Status Bar -->
         <div class="status-bar">
             <span id="status-text">READY</span>
+            <span id="wheel-mode">MODE: SCRUB</span>
             <span id="time-display">00:00</span>
         </div>
 
         <!-- Tape Visualization -->
         <div class="tape-deck">
-            <canvas id="reel-canvas" width="240" height="200"></canvas>
+            <canvas id="reel-canvas" width="240" height="240"></canvas>
+            
+            <!-- Library Panel -->
+            <div id="library-panel">
+                <div class="panel-header">
+                    <span>TAPES</span>
+                    <span id="close-lib">×</span>
+                </div>
+                <div class="tape-list" id="tape-list-container">
+                    <!-- Items go here -->
+                </div>
+                <div style="padding:10px">
+                    <button class="cmd-btn w-full" id="new-tape-btn">NEW TAPE</button>
+                    <button class="w-full mt-2" style="font-size:10px; color:#555" id="delete-tape-btn">DELETE SELECTED</button>
+                </div>
+            </div>
         </div>
 
-        <!-- Touch Controls (Fallback / Visual Feedback) -->
+        <!-- Touch Controls -->
         <div class="controls-overlay">
-            <div id="instruction-hint">Side Btn: REC | Press Screen: PLAY</div>
+            <button class="cmd-btn rec" id="rec-btn">● REC</button>
+            <button class="cmd-btn" id="lib-btn">LIBRARY</button>
         </div>
     </div>
 
+    <script src="js/storage.js"></script>
     <script src="js/audio-engine.js"></script>
     <script src="js/visualizer.js"></script>
     <script src="js/main.js"></script>
