@@ -1,28 +1,26 @@
 * {
+    margin: 0;
+    padding: 0;
     box-sizing: border-box;
 }
 
 body {
-    margin: 0;
-    padding: 0;
+    width: 240px;
+    height: 282px;
     background-color: #1a1a1a;
     color: #e0e0e0;
     font-family: 'Courier New', Courier, monospace;
     overflow: hidden;
     user-select: none;
-    width: 100vw;
-    height: 100vh; /* Adapt to available viewport */
-    position: relative; /* Remove fixed to allow flow */
+    position: relative;
 }
 
 #app {
-    position: absolute;
-    top: 0;
-    left: 0;
     width: 100%;
     height: 100%;
     display: flex;
     flex-direction: column;
+    position: relative;
 }
 
 .status-bar {
@@ -59,44 +57,37 @@ body {
     background: radial-gradient(circle, #2a2a2a 0%, #111 100%);
     position: relative;
     overflow: hidden;
-    min-height: 0; /* Crucial for flex child shrinking */
+    min-height: 0;
 }
 
 #reel-canvas {
-    /* Adjusted sizing to ensure fit */
-    max-width: 100%;
-    max-height: 100%;
-    object-fit: contain;
+    display: block;
+    width: 100%;
+    height: 100%;
 }
 
 .controls-overlay {
     width: 100%;
-    height: 50px;
+    height: 44px;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 0 12px;
-    background: linear-gradient(to top, rgba(0,0,0,0.9) 0%, transparent 100%);
-    z-index: 50;
-    pointer-events: none;
+    padding: 0 10px;
+    background: #000;
+    border-top: 1px solid #333;
     flex-shrink: 0;
-    /* Overlay approach: Absolute at bottom relative to app container */
-    position: absolute;
-    bottom: 0; 
-    left: 0;
 }
 
-/* Specific interactive buttons need pointer-events back */
 .cmd-btn {
-    pointer-events: auto;
     background: #222;
     border: 1px solid #555;
     color: #ccc;
-    padding: 8px 12px;
+    padding: 6px 10px;
     font-family: inherit;
     font-size: 11px;
     border-radius: 6px;
     font-weight: bold;
+    cursor: pointer;
 }
 
 .cmd-btn.rec {

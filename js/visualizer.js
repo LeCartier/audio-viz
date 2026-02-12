@@ -2,19 +2,26 @@ class Visualizer {
     constructor(canvasId) {
         this.canvas = document.getElementById(canvasId);
         this.ctx = this.canvas.getContext('2d');
+        this.animationId = null;
+        this.resizeCanvas();
+    }
+
+    resizeCanvas() {
+        const parent = this.canvas.parentElement;
+        this.canvas.width = parent.clientWidth;
+        this.canvas.height = parent.clientHeight;
         this.width = this.canvas.width;
         this.height = this.canvas.height;
-        this.rotation = 0;
-        this.animationId = null;
         
         // Single Reel Configuration
         this.centerX = this.width / 2;
-        this.centerY = this.height / 2; // Centered
-        this.maxRadius = Math.min(this.width, this.height) * 0.45; // Almost full screen
+        this.centerY = this.height / 2;
+        this.maxRadius = Math.min(this.width, this.height) * 0.45;
     }
 
     start(audioEngine) {
         this.audioEngine = audioEngine;
+        this.resizeCanvas();
         this.animate();
     }
 
