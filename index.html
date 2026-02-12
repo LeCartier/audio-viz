@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=240, initial-scale=1.0, user-scalable=no">
+    <title>R1 Reel Recorder</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Status Bar -->
+        <div class="status-bar">
+            <span id="status-text">READY</span>
+            <span id="time-display">00:00</span>
+        </div>
+
+        <!-- Tape Visualization -->
+        <div class="tape-deck">
+            <canvas id="reel-canvas" width="240" height="200"></canvas>
+        </div>
+
+        <!-- Touch Controls (Fallback / Visual Feedback) -->
+        <div class="controls-overlay">
+            <div id="instruction-hint">Side Btn: REC | Press Screen: PLAY</div>
+        </div>
+    </div>
+
+    <script src="js/audio-engine.js"></script>
+    <script src="js/visualizer.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html>

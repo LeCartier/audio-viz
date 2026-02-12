@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>R1 App Distribution</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- QR Code Styling Library -->
+    <script type="text/javascript" src="https://unpkg.com/qr-code-styling@1.5.0/lib/qr-code-styling.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
+        .canvas-container { margin-top: 2rem; }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-center min-h-screen p-4">
+
+    <div class="bg-white p-8 rounded-xl shadow-lg max-w-md w-full">
+        <h1 class="text-2xl font-bold mb-6 text-gray-800 text-center">R1 Reel Recorder Setup</h1>
+        
+        <div class="mb-4">
+            <label class="block text-gray-700 text-sm font-bold mb-2">App URL (Your hosted link)</label>
+            <input type="url" id="appUrl" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" 
+                   value="https://your-username.github.io/r1-audio-viz" placeholder="https://...">
+            <p class="text-xs text-gray-500 mt-1">Enter the URL where you are hosting this project (e.g. GitHub Pages, Vercel, or ngrok).</p>
+        </div>
+
+        <button onclick="generate()" class="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline transition">
+            Generate QR Code
+        </button>
+
+        <div id="canvas" class="canvas-container flex justify-center"></div>
+        <p class="text-center text-sm text-gray-400 mt-4">Scan this with your Rabbit r1 in Camera Mode</p>
+    </div>
+
+    <script>
+        const qrCode = new QRCodeStyling({
+            width: 300,
+            height: 300,
+            type: "canvas", // using canvas for better download support if needed
+            data: "",
+            image: "", // Optional icon
+            dotsOptions: { color: "#000", type: "rounded" },
+            backgroundOptions: { color: "#fff" },
+            imageOptions: { crossOrigin: "anonymous", margin: 20 }
+        });
+
+        function generate() {
+            const url = document.getElementById('appUrl').value;
+            if(!url) return alert("Please enter a URL");
+
+            // R1 expects a JSON object for creations content
+            const payload = {
+                title: "Reel Recorder",
+                url: url,
+                description: "Retro Audio Recorder",
+                iconUrl: "", // Optional
+                themeColor: "#FE5000"
+            };
+
+            qrCode.update({
+                data: JSON.stringify(payload)
+            });
+
+            document.getElementById('canvas').innerHTML = "";
+            qrCode.append(document.getElementById('canvas'));
+        }
+        
+        // Init with placeholder
+        generate();
+    </script>
+</body>
+</html>

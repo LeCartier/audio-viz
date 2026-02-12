@@ -1,0 +1,80 @@
+body {
+    margin: 0;
+    padding: 0;
+    background-color: #1a1a1a;
+    color: #e0e0e0;
+    font-family: 'Courier New', Courier, monospace; /* Retro font */
+    overflow: hidden; /* Prevent scrolling of the whole page */
+    user-select: none;
+    width: 240px;
+    height: 320px; /* r1 screen height */
+}
+
+#app {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.status-bar {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px;
+    background-color: #000;
+    border-bottom: 2px solid #333;
+    font-size: 14px;
+    font-weight: bold;
+}
+
+#status-text {
+    color: #0f0; /* Retro terminal green */
+}
+
+#time-display {
+    color: #f00; /* LED red */
+}
+
+.tape-deck {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: radial-gradient(circle, #2a2a2a 0%, #111 100%);
+    position: relative;
+}
+
+#reel-canvas {
+    width: 240px;
+    height: 200px;
+}
+
+.controls-overlay {
+    position: absolute;
+    bottom: 0;
+    width: 100%;
+    text-align: center;
+    padding: 10px 0;
+    background: rgba(0, 0, 0, 0.7);
+    font-size: 10px;
+    color: #888;
+}
+
+/* State Classes for Visual Feedback */
+.state-recording #status-text {
+    color: #ff0000;
+    animation: blink 1s infinite;
+}
+
+.state-playing #status-text {
+    color: #00ff00;
+}
+
+.state-scrubbing #status-text {
+    color: #ffff00;
+}
+
+@keyframes blink {
+    50% { opacity: 0; }
+}
