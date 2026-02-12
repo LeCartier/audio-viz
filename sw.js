@@ -1,4 +1,4 @@
-const CACHE_NAME = 'r1-reel-recorder-v1';
+const CACHE_NAME = 'r1-reel-recorder-v2';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
@@ -9,18 +9,16 @@ const ASSETS_TO_CACHE = [
     './js/storage.js'
 ];
 
-// Install Event - Check for updates and cache files
+// Install Event - Force activate new version immediately
 self.addEventListener('install', (event) => {
+    self.skipWaiting();
     event.waitUntil(
         caches.open(CACHE_NAME)
-            .then((cache) => {
-                console.log('Opened cache');
-                return cache.addAll(ASSETS_TO_CACHE);
-            })
+            .then((cache) => cache.addAll(ASSETS_TO_CACHE))
     );
 });
 
-// Activate Event - Clean up old caches
+// Activate Event - Clean up old caches and claim clients
 self.addEventListener('activate', (event) => {
     event.waitUntil(
         caches.keys().then((cacheNames) => {
@@ -31,20 +29,20 @@ self.addEventListener('activate', (event) => {
                     }
                 })
             );
-        })
+        }).then(() => self.clients.claim())
     );
 });
 
-// Fetch Event - Serve from cache first, then network
+// Fetch Event - Network first, fallback to cache
 self.addEventListener('fetch', (event) => {
     event.respondWith(
-        caches.match(event.request)
+        fetch(event.request)
             .then((response) => {
-                // Cache hit - return response
-                if (response) {
-                    return response;
-                }
-                return fetch(event.request);
+                // Update cache with fresh response
+                const clone = response.clone();
+                caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+                return response;
             })
+            .catch(() => caches.match(event.request))
     );
 });

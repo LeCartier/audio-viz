@@ -6,22 +6,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     // UI Elements
     const statusText = document.getElementById('status-text');
     const timeDisplay = document.getElementById('time-display');
-    const wheelModeDisplay = document.getElementById('wheel-mode'); // Added
+    const wheelModeDisplay = document.getElementById('wheel-mode');
     const appContainer = document.getElementById('app');
     const libraryPanel = document.getElementById('library-panel');
     const tapeListContainer = document.getElementById('tape-list-container');
-    
-    const recBtn = document.getElementById('rec-btn');
-    const libBtn = document.getElementById('lib-btn');
     const closeLibBtn = document.getElementById('close-lib');
     const newTapeBtn = document.getElementById('new-tape-btn');
     const deleteTapeBtn = document.getElementById('delete-tape-btn');
+    const canvas = document.getElementById('reel-canvas');
 
     // State
-    // Modes: 'DECK' | 'LIBRARY'
-    let currentMode = 'DECK';
-    // Wheel Modes: 'SCRUB' | 'SPEED'
-    let wheelMode = 'SCRUB';
+    let currentMode = 'DECK'; // 'DECK' | 'LIBRARY'
+    let wheelMode = 'SCRUB';  // 'SCRUB' | 'SPEED'
     let initialized = false;
     let selectedTapeId = null;
 
@@ -33,6 +29,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 initialized = true;
                 visualizer.start(audioEngine);
                 statusText.innerText = "IDLE";
+                appContainer.className = 'state-idle';
                 refreshLibrary();
             } else {
                 statusText.innerText = "ERR: MIC";
@@ -41,22 +38,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // --- Audio Engine Events ---
-    audioEngine.onStateChange = (state) => {
-        appContainer.className = `state-${state}`;
-        statusText.innerText = state.toUpperCase();
-        
-        // REC Button Visual update
-        if (state === 'recording') {
-            recBtn.style.background = '#f00';
-            recBtn.style.color = '#fff';
-            recBtn.innerText = '■ STOP';
-        } else {
-            recBtn.style.background = '';
-            recBtn.style.color = '#f00';
-            recBtn.innerText = '● REC';
-        }
-    };
-
     audioEngine.onTimeUpdate = (current, duration) => {
         timeDisplay.innerText = formatTime(current);
     };
@@ -68,11 +49,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${ms}`;
     }
 
+    // --- Auto-save hook ---
+    audioEngine.onStateChange = async (state) => {
+        appContainer.className = `state-${state}`;
+        statusText.innerText = state.toUpperCase();
+
+        if (state === 'idle' && audioEngine.audioChunks.length > 0) {
+            const blob = new Blob(audioEngine.audioChunks, { type: 'audio/wav' });
+            await storage.saveRecording(blob, audioEngine.duration);
+            statusText.innerText = "SAVED";
+            console.log("Auto-saved tape");
+        }
+    };
+
     // --- Library Management ---
     async function refreshLibrary() {
         const tapes = await storage.getAllRecordings();
         tapeListContainer.innerHTML = '';
-        tapes.forEach((tape, index) => {
+        tapes.forEach((tape) => {
             const div = document.createElement('div');
             div.className = `tape-item ${selectedTapeId === tape.id ? 'selected' : ''}`;
             div.innerHTML = `
@@ -86,9 +80,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     async function selectTape(id) {
         selectedTapeId = id;
-        // Highlight in UI
-        Array.from(tapeListContainer.children).forEach(child => child.classList.remove('selected'));
-        // Find component index... simple UI refresh for now
         refreshLibrary();
     }
 
@@ -101,34 +92,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             audioEngine.audioBuffer = await audioEngine.audioCtx.decodeAudioData(arrayBuffer);
             audioEngine.duration = tape.duration;
             audioEngine.pausedAt = 0;
-            toggleLibrary(false); // Close library -> Go to Deck
+            toggleLibrary(false);
             statusText.innerText = "LOADED";
+            appContainer.className = 'state-paused';
         }
     }
-
-    async function saveCurrentRecording() {
-        if (audioEngine.audioBuffer) {
-            // Need to convert AudioBuffer back to Wav for storage? 
-            // Actually Engine has chunks. But simpler: 
-            // In a real app we'd keep the blob reference. 
-            // Let's modify engine to expose last blob or simple hack:
-            // For now, let's assume we can save only immediately after recording?
-            // Engine exposes nothing currently. Let's rely on standard flow.
-            // Wait, we need the Blob. 
-            // Let's attach a listener to 'onstop' in Engine to auto-save to "Current Tape" slot?
-            // Or just prompt user.
-            // Simplified: We assume current buffer is transient.
-        }
-    }
-
-    // Override Engine to support saving
-    const originalStop = audioEngine.mediaRecorder ? audioEngine.mediaRecorder.onstop : null;
-    // We need to hook into the onstop inside the class. 
-    // Easier: modify AudioEngine to return blob on stop.
-    // For now, let's just use the existing buffer.
 
     // --- Mode Switching ---
-
     function toggleLibrary(show) {
         if (show) {
             currentMode = 'LIBRARY';
@@ -140,205 +110,200 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // --- SDK Alignment & Boilerplate ---
-    
-    // Check if running in R1 environment
+    // --- SDK / Plugin ---
     if (typeof PluginMessageHandler !== 'undefined') {
         console.log('Running as R1 Creation');
     } else {
         console.log('Running in browser mode');
     }
 
-    // Handle Plugin Messages (Required for full SDK support)
     window.onPluginMessage = function(data) {
         console.log('Received plugin message:', data);
-        // Handle potential messages from OS/System
     };
 
-    // --- Hardware Inputs (Rabbit r1) ---
+    // ============================================
+    // INTERACTION: TAP reel = Record start/stop
+    // SWIPE LEFT on reel = Open library
+    // ============================================
+    let touchStartTime = 0;
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let touchMoved = false;
 
-    // SIDE BUTTON
-    window.addEventListener('sideClick', async () => {
-        // Ensure Audio Context is ready (User Gesture workaround)
-        if (!initialized) {
-            await ensureInit(); 
-            // Note: If this event is not trusted, init might fail. 
-            // We rely on previous touch or system allow-list.
+    canvas.addEventListener('touchstart', async (e) => {
+        if (currentMode !== 'DECK') return;
+        await ensureInit();
+        touchStartTime = Date.now();
+        touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
+        touchMoved = false;
+    }, { passive: true });
+
+    canvas.addEventListener('touchmove', (e) => {
+        if (currentMode !== 'DECK') return;
+        const dx = e.touches[0].clientX - touchStartX;
+        const dy = e.touches[0].clientY - touchStartY;
+        if (Math.abs(dx) > 15 || Math.abs(dy) > 15) {
+            touchMoved = true;
         }
+    }, { passive: true });
 
-        // Safety: If Recording, always STOP and switch to Scrub
-        if (audioEngine.isRecording) {
-            handleRecordingStopForScrub();
+    canvas.addEventListener('touchend', (e) => {
+        if (currentMode !== 'DECK') return;
+        const elapsed = Date.now() - touchStartTime;
+        const endX = e.changedTouches[0].clientX;
+        const swipeDx = endX - touchStartX;
+
+        // SWIPE LEFT → open library
+        if (touchMoved && swipeDx < -50) {
+            toggleLibrary(true);
             return;
         }
 
-        if (currentMode === 'DECK') {
-            // DECK MODE: Toggle Wheel Mode
-            wheelMode = (wheelMode === 'SCRUB') ? 'SPEED' : 'SCRUB';
-            wheelModeDisplay.innerText = `MODE: ${wheelMode}`;
-            
-            // Visual Flash
-            const originalColor = wheelModeDisplay.style.color;
-            wheelModeDisplay.style.color = '#fff';
-            setTimeout(() => wheelModeDisplay.style.color = originalColor, 200);
-
-            statusText.innerText = `${wheelMode} MODE`;
-        } else if (currentMode === 'LIBRARY') {
-            // LIBRARY MODE: Load Tape
-            loadSelectedTape();
+        // TAP (short, no movement) → toggle recording
+        if (!touchMoved && elapsed < 300) {
+            if (audioEngine.isRecording) {
+                audioEngine.stopRecording();
+            } else {
+                if (audioEngine.isPlaying) audioEngine.stop();
+                audioEngine.startRecording();
+            }
         }
     });
 
-    // WHEEL
+    // ============================================
+    // SWIPE RIGHT in library → close it
+    // ============================================
+    let libTouchStartX = 0;
+
+    libraryPanel.addEventListener('touchstart', (e) => {
+        libTouchStartX = e.touches[0].clientX;
+    }, { passive: true });
+
+    libraryPanel.addEventListener('touchend', (e) => {
+        const dx = e.changedTouches[0].clientX - libTouchStartX;
+        if (dx > 50) {
+            toggleLibrary(false);
+        }
+    });
+
+    // ============================================
+    // SIDE BUTTON = Play / Pause
+    // ============================================
+    window.addEventListener('sideClick', async () => {
+        if (!initialized) await ensureInit();
+
+        // If recording, stop first
+        if (audioEngine.isRecording) {
+            audioEngine.stopRecording();
+            wheelMode = 'SCRUB';
+            wheelModeDisplay.innerText = `MODE: ${wheelMode}`;
+            return;
+        }
+
+        if (currentMode === 'LIBRARY') {
+            loadSelectedTape();
+            return;
+        }
+
+        // DECK MODE: Play / Pause toggle
+        if (audioEngine.audioBuffer) {
+            if (audioEngine.isPlaying) {
+                audioEngine.pause();
+            } else {
+                audioEngine.play();
+            }
+        }
+    });
+
+    // Long press side button → toggle wheel mode
+    window.addEventListener('longPressStart', () => {
+        if (currentMode === 'DECK' && !audioEngine.isRecording) {
+            wheelMode = (wheelMode === 'SCRUB') ? 'SPEED' : 'SCRUB';
+            wheelModeDisplay.innerText = `MODE: ${wheelMode}`;
+            statusText.innerText = `${wheelMode} MODE`;
+            const originalColor = wheelModeDisplay.style.color;
+            wheelModeDisplay.style.color = '#fff';
+            setTimeout(() => wheelModeDisplay.style.color = originalColor, 200);
+        }
+    });
+
+    window.addEventListener('longPressEnd', () => {});
+
+    // ============================================
+    // SCROLL WHEEL = Scrub / Speed
+    // ============================================
     window.addEventListener('scrollUp', () => handleScroll(1));
     window.addEventListener('scrollDown', () => handleScroll(-1));
 
     function handleScroll(delta) {
         if (!initialized) return;
 
-        // Auto-stop recording if scrolling
         if (audioEngine.isRecording) {
-            handleRecordingStopForScrub();
-            // We can't scrub yet, buffer isn't ready. 
-            // Optional: Queue the scrub?
+            audioEngine.stopRecording();
+            wheelMode = 'SCRUB';
+            wheelModeDisplay.innerText = `MODE: ${wheelMode}`;
+            statusText.innerText = "BUFFERING...";
             return;
         }
 
         if (currentMode === 'DECK') {
-            // Updated to use manipulate (scrub/speed) based on mode
-             if (audioEngine.isPlaying || audioEngine.pausedAt > 0 || audioEngine.audioBuffer) {
-                audioEngine.manipulate(delta, wheelMode); 
+            if (audioEngine.isPlaying || audioEngine.pausedAt > 0 || audioEngine.audioBuffer) {
+                audioEngine.manipulate(delta, wheelMode);
                 updateStatusForScrub();
             }
         } else if (currentMode === 'LIBRARY') {
-            // Navigate List
-            tapeListContainer.scrollTop += (delta * -20);
+            tapeListContainer.scrollTop += (delta * -30);
         }
     }
 
-    async function handleRecordingStopForScrub() {
-        audioEngine.stopRecording();
-        wheelMode = 'SCRUB'; // Force Scrub mode for immediate review
-        wheelModeDisplay.innerText = `MODE: ${wheelMode}`;
-        statusText.innerText = "BUFFERING...";
-        // The engine's onstop handler will fire, audioBuffer will be populated.
-        // User can scroll again to move.
-    }
-
     function updateStatusForScrub() {
-        if (audioEngine.isPlaying) {
-             // Only show speed if we manipulated speed
-             if (wheelMode === 'SPEED') {
-                 statusText.innerText = `SPEED x${audioEngine.playbackRate.toFixed(1)}`;
-             }
-        } else {
+        if (audioEngine.isPlaying && wheelMode === 'SPEED') {
+            statusText.innerText = `SPEED x${audioEngine.playbackRate.toFixed(1)}`;
+        } else if (!audioEngine.isPlaying) {
             statusText.innerText = wheelMode === 'SPEED' ? "SET SPEED" : "SCRUB";
-            if(window.scrubTimeout) clearTimeout(window.scrubTimeout);
-            window.scrubTimeout = setTimeout(() => { 
-                if(!audioEngine.isPlaying) statusText.innerText = "PAUSED"; 
+            if (window.scrubTimeout) clearTimeout(window.scrubTimeout);
+            window.scrubTimeout = setTimeout(() => {
+                if (!audioEngine.isPlaying) statusText.innerText = "PAUSED";
             }, 500);
         }
     }
 
-    // --- Touch / UI Inputs ---
-
-    // Record Button
-    recBtn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        await ensureInit();
-        if (audioEngine.isRecording) {
-            audioEngine.stopRecording();
-            // Auto-Save logic
-            // We need to wait for the blob to be ready.
-            // The engine sets audioBuffer asynchronously. 
-            // We'll hook into onStateChange 'idle' to save.
-        } else {
-            if (audioEngine.isPlaying) audioEngine.stop();
-            audioEngine.startRecording();
-        }
-    });
-
-    // Auto-save hook
-    const originalStateChange = audioEngine.onStateChange;
-    audioEngine.onStateChange = async (state) => {
-        if (originalStateChange) originalStateChange(state);
-        
-        if (state === 'idle' && audioEngine.audioChunks.length > 0) {
-            // Save newly recorded tape
-            const blob = new Blob(audioEngine.audioChunks, { type: 'audio/wav' });
-            await storage.saveRecording(blob, audioEngine.duration);
-            console.log("Auto-saved tape");
-        }
-    };
-
-    // Library Trigger
-    libBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        toggleLibrary(true);
-    });
-
+    // ============================================
+    // Library panel buttons
+    // ============================================
     closeLibBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         toggleLibrary(false);
     });
 
-    // New Tape (Clear Deck)
     newTapeBtn.addEventListener('click', () => {
-        audioEngine.stop(); // Stop any playback
-        audioEngine.audioBuffer = null; // Clear buffer
+        audioEngine.stop();
+        audioEngine.audioBuffer = null;
         audioEngine.duration = 0;
         audioEngine.playStartTime = 0;
+        toggleLibrary(false);
         statusText.innerText = "NEW TAPE";
+        appContainer.className = 'state-idle';
     });
 
-    // Delete Tape
     deleteTapeBtn.addEventListener('click', async () => {
         if (selectedTapeId) {
-            if (confirm("Delete this tape?")) {
-                await storage.deleteRecording(selectedTapeId);
-                selectedTapeId = null;
-                await refreshLibrary();
-                statusText.innerText = "DELETED";
-            }
+            await storage.deleteRecording(selectedTapeId);
+            selectedTapeId = null;
+            await refreshLibrary();
+            statusText.innerText = "DELETED";
         }
     });
 
-    // Touch Scrubbing (Canvas only)
-    const canvas = document.getElementById('reel-canvas');
-    let isDragging = false;
-    let startX = 0;
-    
-    canvas.addEventListener('touchstart', async (e) => {
-        if(currentMode !== 'DECK') return;
-        await ensureInit();
-        isDragging = true;
-        startX = e.touches[0].clientX;
-        if (audioEngine.isPlaying) audioEngine.pause();
-    });
-
-    canvas.addEventListener('touchmove', (e) => {
-        if (!isDragging || currentMode !== 'DECK') return;
-        e.preventDefault();
-        const currentX = e.touches[0].clientX;
-        const delta = currentX - startX;
-        startX = currentX;
-        audioEngine.scrub(delta > 0 ? 1 : -1); 
-    });
-
-    canvas.addEventListener('touchend', () => {
-        isDragging = false;
-    });
-
-    // --- Offline Support (PWA Service Worker) ---
+    // ============================================
+    // Service Worker (PWA)
+    // ============================================
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
             navigator.serviceWorker.register('./sw.js')
-                .then(registration => {
-                    console.log('SW registered: ', registration);
-                })
-                .catch(registrationError => {
-                    console.log('SW registration failed: ', registrationError);
-                });
+                .then(reg => console.log('SW registered:', reg))
+                .catch(err => console.log('SW failed:', err));
         });
     }
 
