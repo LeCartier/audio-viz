@@ -18,9 +18,14 @@ class AudioEngine {
         this.duration = 0;
         this.maxTapeDuration = 300; // 5 Minutes virtual tape capacity
 
+        // Punch-in recording support
+        this.punchInOffset = -1;  // -1 = no punch-in
+        this.preBuffer = null;
+
         // Callbacks for UI updates
         this.onStateChange = null; // (state) => {}
         this.onTimeUpdate = null;  // (currentTime, duration) => {}
+        this.onRecordingFinished = null; // (blob, duration) => {}
     }
 
     async init() {
@@ -40,30 +45,57 @@ class AudioEngine {
 
     startRecording() {
         if (this.isRecording) return;
-        
+
+        // Detect punch-in: existing audio and playhead past start
+        if (this.audioBuffer && this.pausedAt > 0) {
+            this.punchInOffset = this.pausedAt;
+            this.preBuffer = this.audioBuffer;
+        } else {
+            this.punchInOffset = -1;
+            this.preBuffer = null;
+        }
+
         this.audioChunks = [];
         this.mediaRecorder = new MediaRecorder(this.stream);
-        
+
         this.mediaRecorder.ondataavailable = (event) => {
             this.audioChunks.push(event.data);
         };
 
         this.mediaRecorder.onstop = async () => {
-            const audioBlob = new Blob(this.audioChunks, { type: 'audio/wav' });
+            const audioBlob = new Blob(this.audioChunks, { type: 'audio/webm' });
             const arrayBuffer = await audioBlob.arrayBuffer();
-            this.audioBuffer = await this.audioCtx.decodeAudioData(arrayBuffer);
+            const newBuffer = await this.audioCtx.decodeAudioData(arrayBuffer);
+
+            // Merge with pre-existing audio if punch-in
+            if (this.punchInOffset > 0 && this.preBuffer) {
+                this.audioBuffer = this._mergeBuffers(this.preBuffer, this.punchInOffset, newBuffer);
+                console.log('Punch-in merge at', this.punchInOffset.toFixed(2) + 's');
+            } else {
+                this.audioBuffer = newBuffer;
+            }
+
             this.duration = this.audioBuffer.duration;
-            this.pausedAt = 0; // Reset playhead
-            console.log('Recording finished, AudioBuffer created. Duration:', this.duration);
-            if (this.onStateChange) this.onStateChange('idle');
+            this.pausedAt = 0;
+            this.punchInOffset = -1;
+            this.preBuffer = null;
+
+            console.log('Recording finished. Duration:', this.duration.toFixed(2));
+            if (this.onStateChange) this.onStateChange('paused');
+
+            // Export and notify for auto-save
+            if (this.onRecordingFinished) {
+                const blob = this.exportBufferAsWav();
+                this.onRecordingFinished(blob, this.duration);
+            }
         };
 
         this.mediaRecorder.start();
         this.isRecording = true;
         this.recordingStartTime = this.audioCtx.currentTime;
-        this.startPlaybackTicker(); // Start ticker to update UI during recording
+        this.startPlaybackTicker();
         if (this.onStateChange) this.onStateChange('recording');
-        
+
         // Connect mic stream to analyser for visuals during recording
         const source = this.audioCtx.createMediaStreamSource(this.stream);
         source.connect(this.analyser);
@@ -155,8 +187,7 @@ class AudioEngine {
             }
         } else {
             // SCRUB MODE: Seek (Works Playing or Paused)
-            // User requested .3 second increments
-            const seekAmount = 0.3; 
+            const seekAmount = 0.05; // ~50ms per wheel notch for smooth scrub
             
             // If playing, we need to pause to scrub properly or "skip"? 
             // "Buffers along" implies skipping while playing is okay? 
@@ -212,5 +243,83 @@ class AudioEngine {
             return this.audioCtx.currentTime - this.recordingStartTime;
         }
         return this.pausedAt;
+    }
+
+    // --- Punch-in buffer merging ---
+    _mergeBuffers(preBuffer, punchInOffset, newBuffer) {
+        const sampleRate = this.audioCtx.sampleRate;
+        const preFrames = Math.min(
+            Math.floor(punchInOffset * sampleRate),
+            preBuffer.length
+        );
+        const newFrames = newBuffer.length;
+        const totalFrames = preFrames + newFrames;
+        const channels = Math.max(preBuffer.numberOfChannels, newBuffer.numberOfChannels);
+
+        const merged = this.audioCtx.createBuffer(channels, totalFrames, sampleRate);
+
+        for (let ch = 0; ch < channels; ch++) {
+            const mergedData = merged.getChannelData(ch);
+            const preCh = Math.min(ch, preBuffer.numberOfChannels - 1);
+            const newCh = Math.min(ch, newBuffer.numberOfChannels - 1);
+            const preData = preBuffer.getChannelData(preCh);
+            const newData = newBuffer.getChannelData(newCh);
+
+            // Copy pre-existing audio up to punch point
+            for (let i = 0; i < preFrames; i++) {
+                mergedData[i] = preData[i];
+            }
+            // Append new recording after punch point
+            for (let i = 0; i < newFrames; i++) {
+                mergedData[preFrames + i] = newData[i];
+            }
+        }
+
+        return merged;
+    }
+
+    // --- WAV export (proper encoding for save/reload) ---
+    exportBufferAsWav() {
+        if (!this.audioBuffer) return null;
+        const buffer = this.audioBuffer;
+        const numCh = buffer.numberOfChannels;
+        const rate = buffer.sampleRate;
+        const len = buffer.length;
+        const bps = 2; // 16-bit
+        const blockAlign = numCh * bps;
+        const dataSize = len * blockAlign;
+        const ab = new ArrayBuffer(44 + dataSize);
+        const v = new DataView(ab);
+
+        this._writeStr(v, 0, 'RIFF');
+        v.setUint32(4, 36 + dataSize, true);
+        this._writeStr(v, 8, 'WAVE');
+        this._writeStr(v, 12, 'fmt ');
+        v.setUint32(16, 16, true);
+        v.setUint16(20, 1, true);  // PCM
+        v.setUint16(22, numCh, true);
+        v.setUint32(24, rate, true);
+        v.setUint32(28, rate * blockAlign, true);
+        v.setUint16(32, blockAlign, true);
+        v.setUint16(34, 16, true); // bits per sample
+        this._writeStr(v, 36, 'data');
+        v.setUint32(40, dataSize, true);
+
+        let off = 44;
+        for (let i = 0; i < len; i++) {
+            for (let ch = 0; ch < numCh; ch++) {
+                const s = Math.max(-1, Math.min(1, buffer.getChannelData(ch)[i]));
+                v.setInt16(off, s * 0x7FFF, true);
+                off += 2;
+            }
+        }
+
+        return new Blob([ab], { type: 'audio/wav' });
+    }
+
+    _writeStr(view, offset, str) {
+        for (let i = 0; i < str.length; i++) {
+            view.setUint8(offset + i, str.charCodeAt(i));
+        }
     }
 }

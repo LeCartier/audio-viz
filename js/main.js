@@ -13,13 +13,38 @@ document.addEventListener('DOMContentLoaded', async () => {
     const closeLibBtn = document.getElementById('close-lib');
     const newTapeBtn = document.getElementById('new-tape-btn');
     const deleteTapeBtn = document.getElementById('delete-tape-btn');
+    const summarizeTapeBtn = document.getElementById('summarize-tape-btn');
     const canvas = document.getElementById('reel-canvas');
+
+    // Settings panel elements
+    const settingsBtn = document.getElementById('settings-btn');
+    const settingsPanel = document.getElementById('settings-panel');
+    const closeSettingsBtn = document.getElementById('close-settings');
+    const apiKeyInput = document.getElementById('api-key-input');
+    const aiModelSelect = document.getElementById('ai-model-select');
+    const saveSettingsBtn = document.getElementById('save-settings-btn');
+    const clearKeyBtn = document.getElementById('clear-key-btn');
+    const aiStatusEl = document.getElementById('ai-status');
+
+    // Summary panel elements
+    const summaryPanel = document.getElementById('summary-panel');
+    const closeSummaryBtn = document.getElementById('close-summary');
+    const summaryContent = document.getElementById('summary-content');
 
     // State
     let currentMode = 'DECK'; // 'DECK' | 'LIBRARY'
     let wheelMode = 'SCRUB';  // 'SCRUB' | 'SPEED'
     let initialized = false;
     let selectedTapeId = null;
+
+    // --- Wheel Mode Display ---
+    function updateWheelModeDisplay() {
+        if (wheelMode === 'SPEED') {
+            wheelModeDisplay.innerText = `x${audioEngine.playbackRate.toFixed(1)}`;
+        } else {
+            wheelModeDisplay.innerText = 'SCRUB';
+        }
+    }
 
     // --- Init ---
     async function ensureInit() {
@@ -50,13 +75,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // --- Auto-save hook ---
-    audioEngine.onStateChange = async (state) => {
+    audioEngine.onStateChange = (state) => {
         appContainer.className = `state-${state}`;
         statusText.innerText = state.toUpperCase();
+    };
 
-        if (state === 'idle' && audioEngine.audioChunks.length > 0) {
-            const blob = new Blob(audioEngine.audioChunks, { type: 'audio/wav' });
-            await storage.saveRecording(blob, audioEngine.duration);
+    // Auto-save after recording finishes (handles normal + punch-in)
+    audioEngine.onRecordingFinished = async (blob, duration) => {
+        if (blob) {
+            await storage.saveRecording(blob, duration);
             statusText.innerText = "SAVED";
             console.log("Auto-saved tape");
         }
@@ -81,6 +108,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     async function selectTape(id) {
         selectedTapeId = id;
         refreshLibrary();
+        updateSummarizeBtn();
     }
 
     async function loadSelectedTape() {
@@ -104,11 +132,150 @@ document.addEventListener('DOMContentLoaded', async () => {
             currentMode = 'LIBRARY';
             libraryPanel.classList.add('open');
             refreshLibrary();
+            updateSummarizeBtn();
         } else {
             currentMode = 'DECK';
             libraryPanel.classList.remove('open');
         }
     }
+
+    function updateSummarizeBtn() {
+        if (summarizeTapeBtn) {
+            const hasKey = window.aiService && window.aiService.isConfigured();
+            summarizeTapeBtn.disabled = !hasKey || !selectedTapeId;
+            summarizeTapeBtn.title = hasKey ? '' : 'Set API key in ⚙';
+        }
+    }
+
+    // ============================================
+    // SETTINGS PANEL
+    // ============================================
+    function toggleSettings(show) {
+        if (show) {
+            settingsPanel.classList.add('open');
+            // Populate current values
+            if (window.aiService) {
+                apiKeyInput.value = window.aiService.apiKey || '';
+                aiModelSelect.value = window.aiService.model || 'gpt-4o-mini';
+                aiStatusEl.innerText = window.aiService.getStatus();
+            }
+        } else {
+            settingsPanel.classList.remove('open');
+        }
+    }
+
+    settingsBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleSettings(true);
+    });
+
+    closeSettingsBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleSettings(false);
+    });
+
+    saveSettingsBtn.addEventListener('click', () => {
+        const key = apiKeyInput.value.trim();
+        if (key) {
+            window.aiService.setAPIKey(key);
+            window.aiService.model = aiModelSelect.value;
+            try {
+                localStorage.setItem('r1_ai_model', aiModelSelect.value);
+            } catch (e) {}
+            aiStatusEl.innerText = window.aiService.getStatus();
+            statusText.innerText = 'KEY SAVED';
+        } else {
+            aiStatusEl.innerText = 'Please enter a key';
+        }
+    });
+
+    clearKeyBtn.addEventListener('click', () => {
+        window.aiService.clearAPIKey();
+        apiKeyInput.value = '';
+        aiStatusEl.innerText = window.aiService.getStatus();
+        statusText.innerText = 'KEY CLEARED';
+    });
+
+    // Restore model preference
+    try {
+        const savedModel = localStorage.getItem('r1_ai_model');
+        if (savedModel && window.aiService) window.aiService.model = savedModel;
+    } catch (e) {}
+
+    // ============================================
+    // SUMMARY PANEL
+    // ============================================
+    function toggleSummary(show) {
+        if (show) {
+            summaryPanel.classList.add('open');
+        } else {
+            summaryPanel.classList.remove('open');
+        }
+    }
+
+    closeSummaryBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleSummary(false);
+    });
+
+    // ============================================
+    // SUMMARIZE action
+    // ============================================
+    async function summarizeSelectedTape() {
+        if (!selectedTapeId) {
+            statusText.innerText = 'SELECT TAPE';
+            return;
+        }
+        if (!window.aiService || !window.aiService.isConfigured()) {
+            statusText.innerText = 'SET API KEY';
+            toggleSettings(true);
+            return;
+        }
+
+        const tapes = await storage.getAllRecordings();
+        const tape = tapes.find(t => t.id === selectedTapeId);
+        if (!tape || !tape.blob) {
+            statusText.innerText = 'NO AUDIO';
+            return;
+        }
+
+        // Show processing state
+        summaryContent.innerHTML = '<div class="ai-processing">Processing audio…</div>';
+        toggleSummary(true);
+
+        try {
+            const result = await window.aiService.processRecording(tape.blob, (progress) => {
+                summaryContent.innerHTML = `<div class="ai-processing">${progress}</div>`;
+            });
+
+            // Display result
+            summaryContent.innerHTML = `
+                <div class="summary-label">SUMMARY</div>
+                <div class="summary-text">${escapeHtml(result.summary)}</div>
+                <div class="summary-label">TRANSCRIPT</div>
+                <div class="transcript-text">${escapeHtml(result.transcription)}</div>
+            `;
+            statusText.innerText = 'SUMMARIZED';
+
+        } catch (err) {
+            console.error('AI error:', err);
+            summaryContent.innerHTML = `
+                <div class="summary-label">ERROR</div>
+                <div class="summary-text" style="color:#f44">${escapeHtml(err.message)}</div>
+            `;
+            statusText.innerText = 'AI ERROR';
+        }
+    }
+
+    function escapeHtml(str) {
+        return str.replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                  .replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+    }
+
+    summarizeTapeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        summarizeSelectedTape();
+    });
 
     // --- SDK / Plugin ---
     if (typeof PluginMessageHandler !== 'undefined') {
@@ -122,13 +289,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     // ============================================
-    // INTERACTION: TAP reel = Record start/stop
-    // SWIPE LEFT on reel = Open library
+    // INTERACTION: Canvas touch — tap, swipe, spin
+    //  - TAP = Record start/stop
+    //  - SWIPE LEFT = Open library
+    //  - CIRCULAR DRAG (spin reel) = Scrub/Speed
+    //    (stops recording first, same as hw wheel)
     // ============================================
     let touchStartTime = 0;
     let touchStartX = 0;
     let touchStartY = 0;
     let touchMoved = false;
+    let lastTouchY = 0;
+    let touchSpinAccum = 0;       // accumulated vertical drag px
+    const SPIN_THRESHOLD = 12;    // px per scrub notch (lower = more sensitive)
+    let isSpinning = false;       // true once we decide this gesture is a spin
 
     canvas.addEventListener('touchstart', async (e) => {
         if (currentMode !== 'DECK') return;
@@ -136,20 +310,52 @@ document.addEventListener('DOMContentLoaded', async () => {
         touchStartTime = Date.now();
         touchStartX = e.touches[0].clientX;
         touchStartY = e.touches[0].clientY;
+        lastTouchY = touchStartY;
         touchMoved = false;
+        touchSpinAccum = 0;
+        isSpinning = false;
     }, { passive: true });
 
     canvas.addEventListener('touchmove', (e) => {
         if (currentMode !== 'DECK') return;
-        const dx = e.touches[0].clientX - touchStartX;
-        const dy = e.touches[0].clientY - touchStartY;
+        const x = e.touches[0].clientX;
+        const y = e.touches[0].clientY;
+        const dx = x - touchStartX;
+        const dy = y - touchStartY;
+
         if (Math.abs(dx) > 15 || Math.abs(dy) > 15) {
             touchMoved = true;
         }
+
+        // Detect vertical drag as reel spin (after small dead zone)
+        if (touchMoved && !isSpinning && Math.abs(dy) > 20 && Math.abs(dy) > Math.abs(dx)) {
+            isSpinning = true;
+        }
+
+        if (isSpinning) {
+            const moveDy = y - lastTouchY;
+            touchSpinAccum += moveDy;
+
+            // Each SPIN_THRESHOLD px triggers one scrub/speed notch
+            while (Math.abs(touchSpinAccum) >= SPIN_THRESHOLD) {
+                const delta = touchSpinAccum > 0 ? -1 : 1; // drag down = rewind, drag up = forward
+                handleScroll(delta);
+                touchSpinAccum -= (touchSpinAccum > 0 ? SPIN_THRESHOLD : -SPIN_THRESHOLD);
+            }
+        }
+
+        lastTouchY = y;
     }, { passive: true });
 
     canvas.addEventListener('touchend', (e) => {
         if (currentMode !== 'DECK') return;
+
+        // If this was a spin gesture, don't process as tap/swipe
+        if (isSpinning) {
+            isSpinning = false;
+            return;
+        }
+
         const elapsed = Date.now() - touchStartTime;
         const endX = e.changedTouches[0].clientX;
         const swipeDx = endX - touchStartX;
@@ -187,6 +393,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
+    // Swipe right on summary → close
+    let summaryTouchStartX = 0;
+    summaryPanel.addEventListener('touchstart', (e) => {
+        summaryTouchStartX = e.touches[0].clientX;
+    }, { passive: true });
+    summaryPanel.addEventListener('touchend', (e) => {
+        if (e.changedTouches[0].clientX - summaryTouchStartX > 50) toggleSummary(false);
+    });
+
+    // Swipe right on settings → close
+    let settingsTouchStartX = 0;
+    settingsPanel.addEventListener('touchstart', (e) => {
+        settingsTouchStartX = e.touches[0].clientX;
+    }, { passive: true });
+    settingsPanel.addEventListener('touchend', (e) => {
+        if (e.changedTouches[0].clientX - settingsTouchStartX > 50) toggleSettings(false);
+    });
+
     // ============================================
     // SIDE BUTTON = Play / Pause
     // ============================================
@@ -197,7 +421,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (audioEngine.isRecording) {
             audioEngine.stopRecording();
             wheelMode = 'SCRUB';
-            wheelModeDisplay.innerText = `MODE: ${wheelMode}`;
+            updateWheelModeDisplay();
             return;
         }
 
@@ -220,7 +444,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.addEventListener('longPressStart', () => {
         if (currentMode === 'DECK' && !audioEngine.isRecording) {
             wheelMode = (wheelMode === 'SCRUB') ? 'SPEED' : 'SCRUB';
-            wheelModeDisplay.innerText = `MODE: ${wheelMode}`;
+            updateWheelModeDisplay();
             statusText.innerText = `${wheelMode} MODE`;
             const originalColor = wheelModeDisplay.style.color;
             wheelModeDisplay.style.color = '#fff';
@@ -242,7 +466,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (audioEngine.isRecording) {
             audioEngine.stopRecording();
             wheelMode = 'SCRUB';
-            wheelModeDisplay.innerText = `MODE: ${wheelMode}`;
+            updateWheelModeDisplay();
             statusText.innerText = "BUFFERING...";
             return;
         }
@@ -258,10 +482,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function updateStatusForScrub() {
+        updateWheelModeDisplay(); // Keep rate display in sync
         if (audioEngine.isPlaying && wheelMode === 'SPEED') {
-            statusText.innerText = `SPEED x${audioEngine.playbackRate.toFixed(1)}`;
+            statusText.innerText = `x${audioEngine.playbackRate.toFixed(1)}`;
         } else if (!audioEngine.isPlaying) {
-            statusText.innerText = wheelMode === 'SPEED' ? "SET SPEED" : "SCRUB";
+            statusText.innerText = wheelMode === 'SPEED'
+                ? `x${audioEngine.playbackRate.toFixed(1)}`
+                : "SCRUB";
             if (window.scrubTimeout) clearTimeout(window.scrubTimeout);
             window.scrubTimeout = setTimeout(() => {
                 if (!audioEngine.isPlaying) statusText.innerText = "PAUSED";

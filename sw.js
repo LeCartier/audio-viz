@@ -1,4 +1,4 @@
-const CACHE_NAME = 'r1-reel-recorder-v2';
+const CACHE_NAME = 'r1-reel-recorder-v3';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
@@ -6,7 +6,8 @@ const ASSETS_TO_CACHE = [
     './js/main.js',
     './js/audio-engine.js',
     './js/visualizer.js',
-    './js/storage.js'
+    './js/storage.js',
+    './js/ai-service.js'
 ];
 
 // Install Event - Force activate new version immediately

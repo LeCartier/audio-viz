@@ -12,8 +12,9 @@
         <!-- Status Bar -->
         <div class="status-bar">
             <span id="status-text">READY</span>
-            <span id="wheel-mode">MODE: SCRUB</span>
+            <span id="wheel-mode">SCRUB</span>
             <span id="time-display">00:00</span>
+            <span id="settings-btn" class="settings-gear">⚙</span>
         </div>
 
         <!-- Tape Visualization -->
@@ -30,14 +31,52 @@
                     <!-- Items go here -->
                 </div>
                 <div style="padding:10px">
-                    <button class="cmd-btn w-full" id="new-tape-btn">NEW TAPE</button>
+                    <button class="cmd-btn w-full" id="summarize-tape-btn">⚡ SUMMARIZE</button>
+                    <button class="cmd-btn w-full mt-2" id="new-tape-btn">NEW TAPE</button>
                     <button class="w-full mt-2" style="font-size:10px; color:#555" id="delete-tape-btn">DELETE SELECTED</button>
+                </div>
+            </div>
+
+            <!-- Settings Panel -->
+            <div id="settings-panel">
+                <div class="panel-header">
+                    <span>SETTINGS</span>
+                    <span id="close-settings">×</span>
+                </div>
+                <div class="settings-body">
+                    <div class="setting-group">
+                        <label>OpenAI API Key</label>
+                        <input type="password" id="api-key-input" placeholder="sk-..." autocomplete="off">
+                        <div class="setting-hint" id="ai-status">No API key</div>
+                    </div>
+                    <div class="setting-group">
+                        <label>Chat Model</label>
+                        <select id="ai-model-select">
+                            <option value="gpt-4o-mini">GPT-4o Mini (fast)</option>
+                            <option value="gpt-4o">GPT-4o (better)</option>
+                            <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                        </select>
+                    </div>
+                    <button class="cmd-btn w-full mt-2" id="save-settings-btn">SAVE</button>
+                    <button class="w-full mt-2" style="font-size:10px; color:#555" id="clear-key-btn">CLEAR API KEY</button>
+                </div>
+            </div>
+
+            <!-- Summary Panel -->
+            <div id="summary-panel">
+                <div class="panel-header">
+                    <span>SUMMARY</span>
+                    <span id="close-summary">×</span>
+                </div>
+                <div class="summary-body" id="summary-content">
+                    <div class="summary-placeholder">No summary yet</div>
                 </div>
             </div>
         </div>
     </div>
 
     <script src="js/storage.js"></script>
+    <script src="js/ai-service.js"></script>
     <script src="js/audio-engine.js"></script>
     <script src="js/visualizer.js"></script>
     <script src="js/main.js"></script>
