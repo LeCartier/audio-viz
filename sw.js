@@ -1,4 +1,4 @@
-const CACHE_NAME = 'r1-reel-recorder-v7';
+const CACHE_NAME = 'r1-reel-recorder-v8';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',

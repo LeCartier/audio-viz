@@ -132,11 +132,23 @@ class AudioEngine {
         this.sourceNode.connect(this.analyser);
         this.analyser.connect(this.audioCtx.destination);
 
+        // Handle resuming from paused position
+        const offset = this.pausedAt;
+        // If at the very end, do nothing — user must scrub back or record
+        if (offset >= this.audioBuffer.duration - 0.01) {
+            this.sourceNode.disconnect();
+            this.sourceNode = null;
+            return;
+        }
+
+        // Tag this source so onended knows if it's still the active one
+        const src = this.sourceNode;
         this.sourceNode.onended = () => {
-            if (this.isPlaying) {
-                // Natural end of playback — freeze at end
+            if (this.sourceNode === src && this.isPlaying) {
+                // Natural end of playback — freeze at true buffer end
                 this.sourceNode = null;
-                this.pausedAt = this.duration;
+                this.pausedAt = this.audioBuffer.duration;
+                this.duration = this.audioBuffer.duration;
                 this.isPlaying = false;
                 this.stopPlaybackTicker();
                 if (this.onTimeUpdate) this.onTimeUpdate(this.duration, this.duration);
@@ -144,14 +156,6 @@ class AudioEngine {
             }
         };
 
-        // Handle resuming from paused position
-        const offset = this.pausedAt;
-        // If at the very end, do nothing — user must scrub back or record
-        if (offset >= this.duration - 0.01) {
-            this.sourceNode.disconnect();
-            this.sourceNode = null;
-            return;
-        }
         this.sourceNode.start(0, offset);
         this.playStartTime = this.audioCtx.currentTime - (offset / this.playbackRate);
         

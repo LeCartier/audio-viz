@@ -579,19 +579,37 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // --- Jog-wheel audio scrub ---
-    const SCRUB_STEP = 0.1; // 100ms of audio per wheel notch
+    // --- Jog-wheel audio scrub (smooth momentum, matches touch feel) ---
+    let wheelMomentum = 0;
+    let wheelMomentumRAF = null;
+    let lastWheelTime = 0;
     let scrubTimeoutId = null;
+    let lastScrubSnippetTime = 0;
 
     function handleScrubWheel(delta) {
         if (!audioEngine.audioBuffer) return;
 
-        const current = audioEngine.getCurrentTime();
-        let target = current + (delta * SCRUB_STEP);
-        target = Math.max(0, Math.min(audioEngine.duration, target));
+        const now = Date.now();
+        const dt = now - lastWheelTime;
+        lastWheelTime = now;
 
-        // Play audio snippet from new position (also pauses normal playback)
-        audioEngine.scrubPlay(target, 0.15);
+        // Rapid clicks build momentum; slow clicks reset
+        if (dt < 150) {
+            wheelMomentum += delta * 0.06; // accelerate
+            wheelMomentum = Math.max(-0.8, Math.min(0.8, wheelMomentum)); // cap
+        } else {
+            wheelMomentum = delta * 0.03; // single notch base
+        }
+
+        // Apply immediate seek
+        directSeek(wheelMomentum);
+
+        // Play audio snippet (throttled so they don't pile up)
+        if (now - lastScrubSnippetTime > 120) {
+            const pos = audioEngine.getCurrentTime();
+            audioEngine.scrubPlay(pos, 0.12);
+            lastScrubSnippetTime = now;
+        }
 
         statusText.innerText = 'SCRUB';
         if (scrubTimeoutId) clearTimeout(scrubTimeoutId);
@@ -600,6 +618,24 @@ document.addEventListener('DOMContentLoaded', async () => {
                 statusText.innerText = 'PAUSED';
             }
         }, 800);
+
+        // Start coasting if not already
+        if (!wheelMomentumRAF) {
+            wheelCoast();
+        }
+    }
+
+    function wheelCoast() {
+        wheelMomentum *= 0.88; // friction
+        if (Math.abs(wheelMomentum) < 0.002) {
+            wheelMomentumRAF = null;
+            wheelMomentum = 0;
+            return;
+        }
+        if (audioEngine.audioBuffer && !audioEngine.isRecording) {
+            directSeek(wheelMomentum);
+        }
+        wheelMomentumRAF = requestAnimationFrame(wheelCoast);
     }
 
     // --- CUE wheel: jump between markers ---
