@@ -552,14 +552,28 @@ document.addEventListener('DOMContentLoaded', async () => {
         inertiaRAF = requestAnimationFrame(step);
     }
 
+    // --- Wheel dead zone during recording (require ~1/8 rotation to stop) ---
+    let recWheelAccum = 0;
+    let recWheelResetTimer = null;
+    const REC_WHEEL_THRESHOLD = 3; // notches needed (~1/8 rotation)
+
     function handleScroll(delta) {
         if (!initialized) return;
 
         if (audioEngine.isRecording) {
-            audioEngine.stopRecording();
-            wheelMode = 'SCRUB';
-            updateWheelModeDisplay();
-            statusText.innerText = "BUFFERING...";
+            // Accumulate wheel notches; only stop recording after threshold
+            recWheelAccum += Math.abs(delta);
+            // Reset accumulator if wheel goes idle
+            if (recWheelResetTimer) clearTimeout(recWheelResetTimer);
+            recWheelResetTimer = setTimeout(() => { recWheelAccum = 0; }, 400);
+
+            if (recWheelAccum >= REC_WHEEL_THRESHOLD) {
+                recWheelAccum = 0;
+                audioEngine.stopRecording();
+                wheelMode = 'SCRUB';
+                updateWheelModeDisplay();
+                statusText.innerText = "BUFFERING...";
+            }
             return;
         }
 

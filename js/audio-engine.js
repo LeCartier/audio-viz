@@ -8,6 +8,12 @@ class AudioEngine {
         this.analyser = this.audioCtx.createAnalyser();
         this.analyser.fftSize = 256;
         this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+
+        // Master gain node — R1 Web Audio bypasses system volume,
+        // so we need our own gain control (SDK pattern: 0.08–0.35)
+        this.masterGain = this.audioCtx.createGain();
+        this.masterGain.gain.value = 0.35;
+        this.masterGain.connect(this.audioCtx.destination);
         
         this.isPlaying = false;
         this.isRecording = false;
@@ -111,6 +117,8 @@ class AudioEngine {
         if (this.onStateChange) this.onStateChange('recording');
 
         // Connect mic stream to analyser for visuals during recording
+        // IMPORTANT: disconnect analyser from output first to prevent live monitoring
+        try { this.analyser.disconnect(); } catch(e) {}
         this.micSourceNode = this.audioCtx.createMediaStreamSource(this.stream);
         this.micSourceNode.connect(this.analyser);
     }
@@ -146,7 +154,7 @@ class AudioEngine {
         this.sourceNode.buffer = this.audioBuffer;
         this.sourceNode.playbackRate.value = this.playbackRate;
         this.sourceNode.connect(this.analyser);
-        this.analyser.connect(this.audioCtx.destination);
+        this.analyser.connect(this.masterGain);
 
         // Handle resuming from paused position
         const bufDuration = this.audioBuffer.duration;
@@ -332,8 +340,8 @@ class AudioEngine {
         // Create a short playback snippet on a separate source
         this.scrubSource = this.audioCtx.createBufferSource();
         this.scrubSource.buffer = this.audioBuffer;
-        // Connect scrub source directly to destination (bypass analyser to avoid conflicts)
-        this.scrubSource.connect(this.audioCtx.destination);
+        // Connect scrub source through master gain (bypass analyser to avoid conflicts)
+        this.scrubSource.connect(this.masterGain);
 
         const self = this;
         const src = this.scrubSource;
