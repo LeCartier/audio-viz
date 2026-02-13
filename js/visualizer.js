@@ -56,11 +56,19 @@ class Visualizer {
             }
         }
 
-        // Time position text curved along the bottom of the arc
+        // Time position text curved along the bottom of the arc - split into two arcs
         if (arcDuration > 0) {
             const pct = Math.min(100, (currentTime / arcDuration) * 100);
-            const label = `${this.fmtTime(currentTime)} / ${this.fmtTime(arcDuration)}  (${pct.toFixed(0)}%)`;
-            this.drawCurvedText(label, this.centerX, this.centerY, this.maxRadius + 20, '#666', '9px Courier New');
+            const currentLabel = `${this.fmtTime(currentTime)}`;
+            const totalLabel = `${this.fmtTime(arcDuration)} (${pct.toFixed(0)}%)`;
+            
+            // Current time arcs from bottom-center up to the right
+            this.drawCurvedTextFromAngle(currentLabel, this.centerX, this.centerY, this.maxRadius + 20, 
+                Math.PI / 2 + 0.1, true, '#888', '9px Courier New');
+            
+            // Total time arcs from bottom-center up to the left (mirrored)
+            this.drawCurvedTextFromAngle(totalLabel, this.centerX, this.centerY, this.maxRadius + 20, 
+                Math.PI / 2 - 0.1, false, '#666', '9px Courier New');
         }
     }
 
@@ -215,6 +223,45 @@ class Visualizer {
             ctx.restore();
 
             angle += halfChar;
+        }
+
+        ctx.restore();
+    }
+
+    drawCurvedTextFromAngle(text, cx, cy, radius, startAngle, clockwise, color, font) {
+        const ctx = this.ctx;
+        ctx.save();
+        ctx.font = font;
+        ctx.fillStyle = color;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        // Measure character widths
+        const charWidths = [];
+        for (let i = 0; i < text.length; i++) {
+            charWidths.push(ctx.measureText(text[i]).width);
+        }
+
+        let angle = startAngle;
+        const direction = clockwise ? 1 : -1;
+
+        for (let i = 0; i < text.length; i++) {
+            const halfChar = charWidths[i] / 2 / radius;
+            angle += halfChar * direction;
+
+            const x = cx + Math.cos(angle) * radius;
+            const y = cy + Math.sin(angle) * radius;
+
+            ctx.save();
+            ctx.translate(x, y);
+            // Rotate so char is tangent to arc with top toward circle, bottom away
+            // For clockwise: subtract π/2, for counter-clockwise: add π/2
+            const rotation = clockwise ? (angle - Math.PI / 2) : (angle + Math.PI / 2);
+            ctx.rotate(rotation);
+            ctx.fillText(text[i], 0, 0);
+            ctx.restore();
+
+            angle += halfChar * direction;
         }
 
         ctx.restore();
