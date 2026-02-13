@@ -223,24 +223,26 @@ class Visualizer {
 
         const totalAngle = totalWidth / radius;
         // Center at 6 o'clock, text reads left-to-right
-        let angle = Math.PI / 2 - totalAngle / 2;
+        // In canvas, increasing angle = clockwise = right-to-left at bottom,
+        // so we start from the left side and decrement (counterclockwise).
+        let angle = Math.PI / 2 + totalAngle / 2;
 
         for (let i = 0; i < text.length; i++) {
             const halfChar = charWidths[i] / 2 / radius;
-            angle += halfChar;
+            angle -= halfChar;
 
             const x = cx + Math.cos(angle) * radius;
             const y = cy + Math.sin(angle) * radius;
 
             ctx.save();
             ctx.translate(x, y);
-            // Bottom of chars face away from center (outside), top toward center
+            // Top of chars toward center, bottom away (outside)
             ctx.rotate(angle - Math.PI / 2);
             ctx.fillStyle = (typeof charColors === 'string') ? charColors : (charColors[i] || '#666');
             ctx.fillText(text[i], 0, 0);
             ctx.restore();
 
-            angle += halfChar;
+            angle -= halfChar;
         }
 
         ctx.restore();
