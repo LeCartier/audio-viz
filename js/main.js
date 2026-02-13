@@ -54,7 +54,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             const success = await audioEngine.init();
             if (success) {
                 initialized = true;
-                visualizer.start(audioEngine);
                 statusText.innerText = "IDLE";
                 appContainer.className = 'state-idle';
                 refreshLibrary();
@@ -63,6 +62,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         }
     }
+
+    // Start visualizer immediately (no mic needed for drawing)
+    visualizer.start(audioEngine);
 
     // --- Audio Engine Events ---
     audioEngine.onTimeUpdate = (current, duration) => {

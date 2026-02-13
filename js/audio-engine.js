@@ -52,8 +52,8 @@ class AudioEngine {
     startRecording() {
         if (this.isRecording) return;
 
-        // Detect punch-in: existing audio and playhead past start
-        if (this.audioBuffer && this.pausedAt > 0) {
+        // Detect punch-in: existing audio — record from current playhead
+        if (this.audioBuffer) {
             this.punchInOffset = this.pausedAt;
             this.preBuffer = this.audioBuffer;
         } else {
@@ -74,7 +74,7 @@ class AudioEngine {
             const newBuffer = await this.audioCtx.decodeAudioData(arrayBuffer);
 
             // Merge with pre-existing audio if punch-in
-            if (this.punchInOffset > 0 && this.preBuffer) {
+            if (this.punchInOffset >= 0 && this.preBuffer) {
                 this.audioBuffer = this._mergeBuffers(this.preBuffer, this.punchInOffset, newBuffer);
                 console.log('Punch-in merge at', this.punchInOffset.toFixed(2) + 's');
             } else {
@@ -245,8 +245,9 @@ class AudioEngine {
                 const current = (this.audioCtx.currentTime - this.playStartTime) * this.playbackRate;
                 if (this.onTimeUpdate) this.onTimeUpdate(current, this.duration);
             } else if (this.isRecording) {
-                const current = this.audioCtx.currentTime - this.recordingStartTime;
-                if (this.onTimeUpdate) this.onTimeUpdate(current, current); // Duration grows with time
+                const current = this.getCurrentTime();
+                const liveDur = this.getLiveDuration();
+                if (this.onTimeUpdate) this.onTimeUpdate(current, liveDur);
             }
         }, 50);
     }
@@ -265,9 +266,20 @@ class AudioEngine {
             return (this.audioCtx.currentTime - this.playStartTime) * this.playbackRate;
         }
         if (this.isRecording) {
-            return this.audioCtx.currentTime - this.recordingStartTime;
+            const elapsed = this.audioCtx.currentTime - this.recordingStartTime;
+            return this.punchInOffset >= 0 ? this.punchInOffset + elapsed : elapsed;
         }
         return this.pausedAt;
+    }
+
+    // Live duration during recording (arc grows as recording extends past old end)
+    getLiveDuration() {
+        if (this.isRecording) {
+            const currentPos = this.getCurrentTime();
+            const oldDuration = (this.preBuffer ? this.preBuffer.duration : 0);
+            return Math.max(oldDuration, currentPos);
+        }
+        return this.duration;
     }
 
     // --- Jog-wheel scrub: play short audio snippet at position ---

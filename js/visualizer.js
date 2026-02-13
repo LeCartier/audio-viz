@@ -38,6 +38,7 @@ class Visualizer {
         ctx.fillRect(0, 0, this.width, this.height);
 
         const currentTime = this.audioEngine.getCurrentTime();
+        const liveDuration = this.audioEngine.getLiveDuration();
         const duration = this.audioEngine.duration || 0;
 
         // Rotation: more rotations per second so scrub movement is obvious
@@ -45,22 +46,23 @@ class Visualizer {
 
         this.drawReel(this.centerX, this.centerY, this.maxRadius, rotationAngle);
 
-        // Draw progress arc around the reel (only when not recording and there's audio)
-        if (duration > 0 && !this.audioEngine.isRecording) {
-            this.drawProgressArc(this.centerX, this.centerY, this.maxRadius + 6, currentTime, duration);
-            // Draw cue markers on the arc
+        // Draw progress arc (shown during playback AND recording)
+        const arcDuration = this.audioEngine.isRecording ? liveDuration : duration;
+        if (arcDuration > 0) {
+            this.drawProgressArc(this.centerX, this.centerY, this.maxRadius + 6, currentTime, arcDuration);
+            // Draw cue markers on the arc at their absolute timestamps
             if (this.audioEngine.markers && this.audioEngine.markers.length > 0) {
-                this.drawMarkers(this.centerX, this.centerY, this.maxRadius + 6, this.audioEngine.markers, duration);
+                this.drawMarkers(this.centerX, this.centerY, this.maxRadius + 6, this.audioEngine.markers, arcDuration);
             }
         }
 
         // Time position text at the bottom
-        if (duration > 0) {
-            const pct = Math.min(100, (currentTime / duration) * 100);
+        if (arcDuration > 0) {
+            const pct = Math.min(100, (currentTime / arcDuration) * 100);
             ctx.fillStyle = '#666';
             ctx.font = '9px Courier New';
             ctx.textAlign = 'center';
-            ctx.fillText(`${this.fmtTime(currentTime)} / ${this.fmtTime(duration)}  (${pct.toFixed(0)}%)`, this.centerX, this.height - 20);
+            ctx.fillText(`${this.fmtTime(currentTime)} / ${this.fmtTime(arcDuration)}  (${pct.toFixed(0)}%)`, this.centerX, this.height - 20);
         }
     }
 
