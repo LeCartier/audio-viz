@@ -96,16 +96,65 @@ document.addEventListener('DOMContentLoaded', async () => {
     // --- Library Management ---
     async function refreshLibrary() {
         const tapes = await storage.getAllRecordings();
+        // Sort by newest edited (lastModified or date) at top
+        tapes.sort((a, b) => {
+            const aTime = new Date(a.lastModified || a.date).getTime();
+            const bTime = new Date(b.lastModified || b.date).getTime();
+            return bTime - aTime;
+        });
         tapeListContainer.innerHTML = '';
         tapes.forEach((tape) => {
             const div = document.createElement('div');
             div.className = `tape-item ${selectedTapeId === tape.id ? 'selected' : ''}`;
-            div.innerHTML = `
-                <div>${tape.name || 'Untitled Tape'}</div>
-                <div class="tape-info">${new Date(tape.date).toLocaleDateString()} • ${formatTime(tape.duration)}</div>
-            `;
+            const nameEl = document.createElement('div');
+            nameEl.className = 'tape-name';
+            nameEl.textContent = tape.name || 'Untitled Tape';
+            const infoEl = document.createElement('div');
+            infoEl.className = 'tape-info';
+            infoEl.textContent = `${new Date(tape.lastModified || tape.date).toLocaleDateString()} • ${formatTime(tape.duration)}`;
+            div.appendChild(nameEl);
+            div.appendChild(infoEl);
             div.onclick = () => selectTape(tape.id);
+
+            // Long-press to rename
+            let longPressTimer = null;
+            div.addEventListener('touchstart', (e) => {
+                longPressTimer = setTimeout(() => {
+                    e.preventDefault();
+                    startRenameTape(div, nameEl, tape);
+                }, 500);
+            }, { passive: false });
+            div.addEventListener('touchend', () => { clearTimeout(longPressTimer); });
+            div.addEventListener('touchmove', () => { clearTimeout(longPressTimer); });
+
             tapeListContainer.appendChild(div);
+        });
+    }
+
+    function startRenameTape(div, nameEl, tape) {
+        // Prevent duplicate inputs
+        if (div.querySelector('input.rename-input')) return;
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'rename-input';
+        input.value = tape.name || 'Untitled Tape';
+        nameEl.style.display = 'none';
+        div.insertBefore(input, nameEl);
+        input.focus();
+        input.select();
+
+        const commitRename = async () => {
+            const newName = input.value.trim() || tape.name || 'Untitled Tape';
+            await storage.updateRecordingName(tape.id, newName);
+            input.remove();
+            nameEl.style.display = '';
+            refreshLibrary();
+        };
+
+        input.addEventListener('blur', commitRename);
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { input.blur(); }
         });
     }
 

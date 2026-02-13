@@ -72,7 +72,7 @@ body {
 .state-recording .tape-deck::after {
     content: '● REC';
     position: absolute;
-    bottom: 8px;
+    bottom: 35px;
     left: 50%;
     transform: translateX(-50%);
     color: #f00;
@@ -87,7 +87,7 @@ body {
 .state-idle .tape-deck::after {
     content: 'TAP TO RECORD';
     position: absolute;
-    bottom: 8px;
+    bottom: 35px;
     left: 50%;
     transform: translateX(-50%);
     color: #555;
@@ -100,7 +100,7 @@ body {
 .state-paused .tape-deck::after {
     content: '\25AE PAUSED';
     position: absolute;
-    bottom: 8px;
+    bottom: 35px;
     left: 50%;
     transform: translateX(-50%);
     color: #888;
@@ -113,7 +113,7 @@ body {
 .state-playing .tape-deck::after {
     content: '▶ PLAYING';
     position: absolute;
-    bottom: 8px;
+    bottom: 35px;
     left: 50%;
     transform: translateX(-50%);
     color: #0f0;
@@ -173,6 +173,19 @@ body {
 .tape-info {
     font-size: 10px;
     color: #888;
+}
+
+.rename-input {
+    width: 100%;
+    background: #222;
+    color: #fff;
+    border: 1px solid #FE5000;
+    padding: 4px 6px;
+    font-size: 14px;
+    font-family: inherit;
+    outline: none;
+    box-sizing: border-box;
+    margin-bottom: 2px;
 }
 
 /* State Classes for Visual Feedback */

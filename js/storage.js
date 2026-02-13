@@ -67,4 +67,27 @@ class TapeLibrary {
         const store = transaction.objectStore(this.storeName);
         store.delete(id);
     }
+
+    async updateRecordingName(id, newName) {
+        if (!this.db) await this.init();
+        const transaction = this.db.transaction([this.storeName], "readwrite");
+        const store = transaction.objectStore(this.storeName);
+
+        return new Promise((resolve, reject) => {
+            const getReq = store.get(id);
+            getReq.onsuccess = () => {
+                const record = getReq.result;
+                if (record) {
+                    record.name = newName;
+                    record.lastModified = new Date();
+                    const putReq = store.put(record);
+                    putReq.onsuccess = () => resolve();
+                    putReq.onerror = () => reject(putReq.error);
+                } else {
+                    reject(new Error('Recording not found'));
+                }
+            };
+            getReq.onerror = () => reject(getReq.error);
+        });
+    }
 }
