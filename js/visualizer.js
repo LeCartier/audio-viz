@@ -56,33 +56,39 @@ class Visualizer {
             }
         }
 
-        // Time position text curved along the bottom of the arc - split into two arcs
-        if (arcDuration > 0) {
-            const pct = Math.min(100, (currentTime / arcDuration) * 100);
-            const currentLabel = `${this.fmtTime(currentTime)}`;
-            const totalLabel = `${this.fmtTime(arcDuration)} (${pct.toFixed(0)}%)`;
-            
-            // Current time arcs from bottom-center up to the right
-            this.drawCurvedTextFromAngle(currentLabel, this.centerX, this.centerY, this.maxRadius + 20, 
-                Math.PI / 2 + 0.08, true, '#888', '9px Courier New');
-            
-            // Total time arcs from bottom-center up to the left (mirrored)
-            this.drawCurvedTextFromAngle(totalLabel, this.centerX, this.centerY, this.maxRadius + 20, 
-                Math.PI / 2 - 0.08, false, '#666', '9px Courier New');
+        // Build a single bottom-of-reel label line
+        const statusLabel = this.getStatusLabel();
+        const parts = [];
+        const colors = [];
+
+        if (statusLabel) {
+            let show = true;
+            if (statusLabel.blink) show = Math.floor(Date.now() / 500) % 2 === 0;
+            if (show) {
+                parts.push(statusLabel.text);
+                colors.push(statusLabel.color);
+            }
         }
 
-        // Status label curved along the bottom, arcing up to the right
-        const statusLabel = this.getStatusLabel();
-        if (statusLabel) {
-            // Blink effect for recording
-            let show = true;
-            if (statusLabel.blink) {
-                show = Math.floor(Date.now() / 500) % 2 === 0;
+        if (arcDuration > 0) {
+            const pct = Math.min(100, (currentTime / arcDuration) * 100);
+            const timeStr = `${this.fmtTime(currentTime)}/${this.fmtTime(arcDuration)} ${pct.toFixed(0)}%`;
+            parts.push(timeStr);
+            colors.push('#777');
+        }
+
+        if (parts.length > 0) {
+            const label = parts.join('  ');
+            // Assign per-character colors
+            const charColors = [];
+            let ci = 0;
+            for (let p = 0; p < parts.length; p++) {
+                const seg = p < parts.length - 1 ? parts[p] + '  ' : parts[p];
+                for (let j = 0; j < seg.length; j++) {
+                    charColors.push(colors[p]);
+                }
             }
-            if (show) {
-                this.drawCurvedTextFromAngle(statusLabel.text, this.centerX, this.centerY, this.maxRadius + 32, 
-                    Math.PI / 2 + 0.08, true, statusLabel.color, 'bold 10px Courier New');
-            }
+            this.drawCurvedTextCentered(label, this.centerX, this.centerY, this.maxRadius + 22, charColors, '9px Courier New');
         }
     }
 
@@ -199,15 +205,14 @@ class Visualizer {
         });
     }
 
-    drawCurvedText(text, cx, cy, radius, color, font) {
+    drawCurvedTextCentered(text, cx, cy, radius, charColors, font) {
         const ctx = this.ctx;
         ctx.save();
         ctx.font = font;
-        ctx.fillStyle = color;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
 
-        // Measure total angular span of the text
+        // Measure total angular span
         const charWidths = [];
         let totalWidth = 0;
         for (let i = 0; i < text.length; i++) {
@@ -216,10 +221,8 @@ class Visualizer {
             totalWidth += w;
         }
 
-        // Angular span: map total pixel width to arc length
         const totalAngle = totalWidth / radius;
-
-        // Center the text at the bottom of the circle (Math.PI / 2 = 6 o'clock)
+        // Center at 6 o'clock, text reads left-to-right
         let angle = Math.PI / 2 - totalAngle / 2;
 
         for (let i = 0; i < text.length; i++) {
@@ -231,51 +234,13 @@ class Visualizer {
 
             ctx.save();
             ctx.translate(x, y);
-            // Rotate so char is upright tangent to arc, text reads left-to-right
-            ctx.rotate(angle + Math.PI / 2);
+            // Bottom of chars face away from center (outside), top toward center
+            ctx.rotate(angle - Math.PI / 2);
+            ctx.fillStyle = (typeof charColors === 'string') ? charColors : (charColors[i] || '#666');
             ctx.fillText(text[i], 0, 0);
             ctx.restore();
 
             angle += halfChar;
-        }
-
-        ctx.restore();
-    }
-
-    drawCurvedTextFromAngle(text, cx, cy, radius, startAngle, clockwise, color, font) {
-        const ctx = this.ctx;
-        ctx.save();
-        ctx.font = font;
-        ctx.fillStyle = color;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-
-        // Measure character widths
-        const charWidths = [];
-        for (let i = 0; i < text.length; i++) {
-            charWidths.push(ctx.measureText(text[i]).width);
-        }
-
-        let angle = startAngle;
-        const direction = clockwise ? 1 : -1;
-
-        for (let i = 0; i < text.length; i++) {
-            const halfChar = charWidths[i] / 2 / radius;
-            angle += halfChar * direction;
-
-            const x = cx + Math.cos(angle) * radius;
-            const y = cy + Math.sin(angle) * radius;
-
-            ctx.save();
-            ctx.translate(x, y);
-            // Rotate so char is tangent to arc with top toward circle, bottom away
-            // For clockwise: subtract π/2, for counter-clockwise: add π/2
-            const rotation = clockwise ? (angle - Math.PI / 2) : (angle + Math.PI / 2);
-            ctx.rotate(rotation);
-            ctx.fillText(text[i], 0, 0);
-            ctx.restore();
-
-            angle += halfChar * direction;
         }
 
         ctx.restore();
