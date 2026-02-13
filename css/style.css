@@ -196,6 +196,17 @@ body {
 /* ============================================
    Settings Gear Button
    ============================================ */
+#app-version {
+    position: absolute;
+    bottom: 2px;
+    right: 4px;
+    font-size: 8px;
+    color: #333;
+    font-family: 'Courier New', Courier, monospace;
+    pointer-events: none;
+    z-index: 1;
+}
+
 .settings-gear {
     font-size: 14px;
     color: #666;

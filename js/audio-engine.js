@@ -145,11 +145,13 @@ class AudioEngine {
 
     pause() {
         if (this.isPlaying && this.sourceNode) {
+            this.sourceNode.onended = null; // prevent async onended from firing
             this.sourceNode.stop();
+            this.sourceNode.disconnect();
             this.sourceNode = null;
-            // Calculate where we ceased
+            // Calculate where we stopped
             const elapsed = (this.audioCtx.currentTime - this.playStartTime) * this.playbackRate;
-            this.pausedAt = Math.min(this.duration, Math.max(0, elapsed)); // Clamp
+            this.pausedAt = Math.min(this.duration, Math.max(0, elapsed));
             this.isPlaying = false;
             this.stopPlaybackTicker();
             if (this.onStateChange) this.onStateChange('paused');
@@ -187,25 +189,25 @@ class AudioEngine {
             }
         } else {
             // SCRUB MODE: Seek (Works Playing or Paused)
-            const seekAmount = 0.05; // ~50ms per wheel notch for smooth scrub
-            
-            // If playing, we need to pause to scrub properly or "skip"? 
-            // "Buffers along" implies skipping while playing is okay? 
-            // Usually scrubbing implies pausing or "jogging".
-            // Let's pause if playing to allow precise buffering, or just jump?
-            // "buffers along... works on finished... or current in recording".
-            // Let's Jump playhead.
+            const seekAmount = 0.02; // ~20ms per notch for fine-grained scrub
             
             let targetTime = this.getCurrentTime();
             targetTime += (delta > 0 ? seekAmount : -seekAmount);
             targetTime = Math.max(0, Math.min(this.duration, targetTime));
             
             if (this.isPlaying) {
-                // Live seek
-                this.sourceNode.stop();
-                this.sourceNode = null;
+                // Kill the current source without triggering onended feedback
+                if (this.sourceNode) {
+                    this.sourceNode.onended = null; // prevent race condition
+                    this.sourceNode.stop();
+                    this.sourceNode.disconnect();
+                    this.sourceNode = null;
+                }
+                this.isPlaying = false;
+                this.stopPlaybackTicker();
                 this.pausedAt = targetTime;
-                this.play(); // Restart at new position
+                // Restart cleanly
+                this.play();
             } else {
                  this.pausedAt = targetTime;
                  if (this.onTimeUpdate) this.onTimeUpdate(this.pausedAt, this.duration);
