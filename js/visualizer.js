@@ -64,11 +64,25 @@ class Visualizer {
             
             // Current time arcs from bottom-center up to the right
             this.drawCurvedTextFromAngle(currentLabel, this.centerX, this.centerY, this.maxRadius + 20, 
-                Math.PI / 2 + 0.1, true, '#888', '9px Courier New');
+                Math.PI / 2 + 0.08, true, '#888', '9px Courier New');
             
             // Total time arcs from bottom-center up to the left (mirrored)
             this.drawCurvedTextFromAngle(totalLabel, this.centerX, this.centerY, this.maxRadius + 20, 
-                Math.PI / 2 - 0.1, false, '#666', '9px Courier New');
+                Math.PI / 2 - 0.08, false, '#666', '9px Courier New');
+        }
+
+        // Status label curved along the bottom, arcing up to the right
+        const statusLabel = this.getStatusLabel();
+        if (statusLabel) {
+            // Blink effect for recording
+            let show = true;
+            if (statusLabel.blink) {
+                show = Math.floor(Date.now() / 500) % 2 === 0;
+            }
+            if (show) {
+                this.drawCurvedTextFromAngle(statusLabel.text, this.centerX, this.centerY, this.maxRadius + 32, 
+                    Math.PI / 2 + 0.08, true, statusLabel.color, 'bold 10px Courier New');
+            }
         }
     }
 
@@ -265,6 +279,19 @@ class Visualizer {
         }
 
         ctx.restore();
+    }
+
+    getStatusLabel() {
+        const ae = this.audioEngine;
+        if (ae.isRecording) {
+            return { text: '● REC', color: '#f00', blink: true };
+        } else if (ae.isPlaying) {
+            return { text: '▶ PLAYING', color: '#0f0', blink: false };
+        } else if (ae.audioBuffer && !ae.isPlaying) {
+            return { text: '\u25fc PAUSED', color: '#888', blink: false };
+        } else {
+            return { text: 'TAP TO RECORD', color: '#555', blink: false };
+        }
     }
 
     fmtTime(s) {

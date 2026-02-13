@@ -155,7 +155,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             window.visualViewport.addEventListener('resize', scrollInputIntoView);
         }
 
+        let committed = false;
         const commitRename = async () => {
+            if (committed) return;
+            committed = true;
             if (window.visualViewport) {
                 window.visualViewport.removeEventListener('resize', scrollInputIntoView);
             }
@@ -163,12 +166,19 @@ document.addEventListener('DOMContentLoaded', async () => {
             await storage.updateRecordingName(tape.id, newName);
             input.remove();
             nameEl.style.display = '';
+            // Move focus away from any input to prevent browser
+            // from jumping to the next focusable element (e.g. API key)
+            document.activeElement?.blur();
             refreshLibrary();
         };
 
         input.addEventListener('blur', commitRename);
         input.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') { input.blur(); }
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                e.stopPropagation();
+                commitRename();
+            }
         });
     }
 
