@@ -49,8 +49,16 @@ class AudioEngine {
         }
     }
 
+    // Ensure AudioContext is alive (browsers suspend it)
+    async ensureCtxRunning() {
+        if (this.audioCtx.state === 'suspended') {
+            try { await this.audioCtx.resume(); } catch(e) {}
+        }
+    }
+
     startRecording() {
         if (this.isRecording) return;
+        this.ensureCtxRunning();
 
         // Detect punch-in: existing audio — record from current playhead
         if (this.audioBuffer) {
@@ -115,8 +123,8 @@ class AudioEngine {
             this.micSourceNode.disconnect();
             this.micSourceNode = null;
         }
-        // Also disconnect analyser from destination in case it was routed
-        try { this.analyser.disconnect(); } catch (e) {}
+        // Don't disconnect analyser entirely — play() needs the analyser→destination chain.
+        // Just remove the mic source input (already done above).
 
         this.mediaRecorder.stop();
         this.isRecording = false;
@@ -125,6 +133,10 @@ class AudioEngine {
 
     play() {
         if (this.isPlaying || !this.audioBuffer) return;
+        this.ensureCtxRunning();
+
+        // Ensure analyser is cleanly disconnected before rewiring
+        try { this.analyser.disconnect(); } catch(e) {}
 
         this.sourceNode = this.audioCtx.createBufferSource();
         this.sourceNode.buffer = this.audioBuffer;
@@ -133,13 +145,17 @@ class AudioEngine {
         this.analyser.connect(this.audioCtx.destination);
 
         // Handle resuming from paused position
+        const bufDuration = this.audioBuffer.duration;
         const offset = this.pausedAt;
         // If at the very end, do nothing — user must scrub back or record
-        if (offset >= this.audioBuffer.duration - 0.01) {
+        if (offset >= bufDuration - 0.05) {
             this.sourceNode.disconnect();
             this.sourceNode = null;
             return;
         }
+
+        // Sync duration to buffer truth
+        this.duration = bufDuration;
 
         // Tag this source so onended knows if it's still the active one
         const src = this.sourceNode;
@@ -147,8 +163,8 @@ class AudioEngine {
             if (this.sourceNode === src && this.isPlaying) {
                 // Natural end of playback — freeze at true buffer end
                 this.sourceNode = null;
-                this.pausedAt = this.audioBuffer.duration;
-                this.duration = this.audioBuffer.duration;
+                this.pausedAt = bufDuration;
+                this.duration = bufDuration;
                 this.isPlaying = false;
                 this.stopPlaybackTicker();
                 if (this.onTimeUpdate) this.onTimeUpdate(this.duration, this.duration);
@@ -173,12 +189,15 @@ class AudioEngine {
     pause() {
         if (this.isPlaying && this.sourceNode) {
             this.sourceNode.onended = null; // prevent async onended from firing
-            this.sourceNode.stop();
-            this.sourceNode.disconnect();
+            try {
+                this.sourceNode.stop();
+                this.sourceNode.disconnect();
+            } catch(e) {}
             this.sourceNode = null;
-            // Calculate where we stopped
+            // Calculate where we stopped — clamp to actual buffer duration
+            const bufDur = this.audioBuffer ? this.audioBuffer.duration : this.duration;
             const elapsed = (this.audioCtx.currentTime - this.playStartTime) * this.playbackRate;
-            this.pausedAt = Math.min(this.duration, Math.max(0, elapsed));
+            this.pausedAt = Math.min(bufDur, Math.max(0, elapsed));
             this.isPlaying = false;
             this.stopPlaybackTicker();
             if (this.onStateChange) this.onStateChange('paused');
@@ -287,13 +306,10 @@ class AudioEngine {
     }
 
     // --- Jog-wheel scrub: play short audio snippet at position ---
+    // Does NOT interfere with isPlaying state — it's an overlay preview
     scrubPlay(position, snippetDuration = 0.15) {
         if (!this.audioBuffer) return;
-
-        // Stop normal playback if active
-        if (this.isPlaying) {
-            this.pause();
-        }
+        this.ensureCtxRunning();
 
         // Stop any existing scrub source
         if (this.scrubSource) {
@@ -306,13 +322,14 @@ class AudioEngine {
         }
 
         // Clamp position
-        position = Math.max(0, Math.min(this.duration - 0.01, position));
+        const bufDur = this.audioBuffer.duration;
+        position = Math.max(0, Math.min(bufDur - 0.02, position));
 
-        // Create a short playback snippet
+        // Create a short playback snippet on a separate source
         this.scrubSource = this.audioCtx.createBufferSource();
         this.scrubSource.buffer = this.audioBuffer;
-        this.scrubSource.connect(this.analyser);
-        this.analyser.connect(this.audioCtx.destination);
+        // Connect scrub source directly to destination (bypass analyser to avoid conflicts)
+        this.scrubSource.connect(this.audioCtx.destination);
 
         const self = this;
         const src = this.scrubSource;
@@ -324,7 +341,7 @@ class AudioEngine {
         };
 
         // Play a short snippet from position
-        const remaining = this.duration - position;
+        const remaining = bufDur - position;
         const dur = Math.min(snippetDuration, Math.max(0, remaining));
         if (dur > 0.01) {
             this.scrubSource.start(0, position, dur);
