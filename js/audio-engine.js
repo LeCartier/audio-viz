@@ -97,17 +97,23 @@ class AudioEngine {
         if (this.onStateChange) this.onStateChange('recording');
 
         // Connect mic stream to analyser for visuals during recording
-        const source = this.audioCtx.createMediaStreamSource(this.stream);
-        source.connect(this.analyser);
+        this.micSourceNode = this.audioCtx.createMediaStreamSource(this.stream);
+        this.micSourceNode.connect(this.analyser);
     }
 
     stopRecording() {
         if (!this.isRecording) return;
+
+        // Disconnect mic from analyser to prevent feedback
+        if (this.micSourceNode) {
+            this.micSourceNode.disconnect();
+            this.micSourceNode = null;
+        }
+        // Also disconnect analyser from destination in case it was routed
+        try { this.analyser.disconnect(); } catch (e) {}
+
         this.mediaRecorder.stop();
         this.isRecording = false;
-        // stopPlaybackTicker() is NOT called here because we want timeDisplay to stay valid 
-        // until we reset or new action starts? 
-        // Actually ticker should stop.
         this.stopPlaybackTicker();
     }
 

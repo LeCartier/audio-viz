@@ -294,25 +294,32 @@ document.addEventListener('DOMContentLoaded', async () => {
     //  - SWIPE LEFT = Open library
     //  - CIRCULAR DRAG (spin reel) = Scrub/Speed
     //    (stops recording first, same as hw wheel)
+    //  - Velocity-based: faster drag = bigger seek
+    //  - Inertia on release for smooth coast
     // ============================================
     let touchStartTime = 0;
     let touchStartX = 0;
     let touchStartY = 0;
     let touchMoved = false;
     let lastTouchY = 0;
-    let touchSpinAccum = 0;       // accumulated vertical drag px
-    const SPIN_THRESHOLD = 12;    // px per scrub notch (lower = more sensitive)
-    let isSpinning = false;       // true once we decide this gesture is a spin
+    let lastTouchTime = 0;
+    let touchVelocity = 0;        // px/ms vertical
+    let isSpinning = false;
+    let inertiaRAF = null;
 
     canvas.addEventListener('touchstart', async (e) => {
         if (currentMode !== 'DECK') return;
         await ensureInit();
+        // Cancel any running inertia
+        if (inertiaRAF) { cancelAnimationFrame(inertiaRAF); inertiaRAF = null; }
+
         touchStartTime = Date.now();
         touchStartX = e.touches[0].clientX;
         touchStartY = e.touches[0].clientY;
         lastTouchY = touchStartY;
+        lastTouchTime = touchStartTime;
+        touchVelocity = 0;
         touchMoved = false;
-        touchSpinAccum = 0;
         isSpinning = false;
     }, { passive: true });
 
@@ -322,6 +329,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const y = e.touches[0].clientY;
         const dx = x - touchStartX;
         const dy = y - touchStartY;
+        const now = Date.now();
 
         if (Math.abs(dx) > 15 || Math.abs(dy) > 15) {
             touchMoved = true;
@@ -334,25 +342,39 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (isSpinning) {
             const moveDy = y - lastTouchY;
-            touchSpinAccum += moveDy;
+            const dt = Math.max(1, now - lastTouchTime);
+            touchVelocity = moveDy / dt; // px/ms
 
-            // Each SPIN_THRESHOLD px triggers one scrub/speed notch
-            while (Math.abs(touchSpinAccum) >= SPIN_THRESHOLD) {
-                const delta = touchSpinAccum > 0 ? -1 : 1; // drag down = rewind, drag up = forward
-                handleScroll(delta);
-                touchSpinAccum -= (touchSpinAccum > 0 ? SPIN_THRESHOLD : -SPIN_THRESHOLD);
+            // Proportional scrub: map px directly to seconds
+            // ~200px full drag ≈ full duration, scale by duration
+            const duration = audioEngine.duration || 1;
+            const pxToSec = duration / 300; // 300px = full tape
+            const seekDelta = -moveDy * pxToSec;  // drag up = forward
+
+            if (seekDelta !== 0) {
+                // If recording, stop first (same as hw wheel)
+                if (audioEngine.isRecording) {
+                    audioEngine.stopRecording();
+                    wheelMode = 'SCRUB';
+                    updateWheelModeDisplay();
+                    statusText.innerText = "BUFFERING...";
+                } else if (audioEngine.audioBuffer) {
+                    directSeek(seekDelta);
+                }
             }
         }
 
         lastTouchY = y;
+        lastTouchTime = now;
     }, { passive: true });
 
     canvas.addEventListener('touchend', (e) => {
         if (currentMode !== 'DECK') return;
 
-        // If this was a spin gesture, don't process as tap/swipe
+        // If this was a spin gesture, apply inertia then return
         if (isSpinning) {
             isSpinning = false;
+            startInertia();
             return;
         }
 
@@ -459,6 +481,53 @@ document.addEventListener('DOMContentLoaded', async () => {
     // ============================================
     window.addEventListener('scrollUp', () => handleScroll(1));
     window.addEventListener('scrollDown', () => handleScroll(-1));
+
+    // Direct seek by seconds delta (used by touch spin)
+    function directSeek(secondsDelta) {
+        if (!audioEngine.audioBuffer) return;
+        let target = audioEngine.getCurrentTime() + secondsDelta;
+        target = Math.max(0, Math.min(audioEngine.duration, target));
+
+        if (audioEngine.isPlaying) {
+            if (audioEngine.sourceNode) {
+                audioEngine.sourceNode.onended = null;
+                audioEngine.sourceNode.stop();
+                audioEngine.sourceNode.disconnect();
+                audioEngine.sourceNode = null;
+            }
+            audioEngine.isPlaying = false;
+            audioEngine.stopPlaybackTicker();
+            audioEngine.pausedAt = target;
+            audioEngine.play();
+        } else {
+            audioEngine.pausedAt = target;
+            if (audioEngine.onTimeUpdate) audioEngine.onTimeUpdate(target, audioEngine.duration);
+        }
+        updateStatusForScrub();
+    }
+
+    // Inertia: coast after finger release
+    function startInertia() {
+        const friction = 0.92;
+        const minVelocity = 0.002; // px/ms cutoff
+        let vel = touchVelocity;
+
+        function step() {
+            vel *= friction;
+            if (Math.abs(vel) < minVelocity) { inertiaRAF = null; return; }
+
+            const duration = audioEngine.duration || 1;
+            const pxToSec = duration / 300;
+            const dt = 16; // ~60fps
+            const seekDelta = -vel * dt * pxToSec;
+
+            if (audioEngine.audioBuffer && !audioEngine.isRecording) {
+                directSeek(seekDelta);
+            }
+            inertiaRAF = requestAnimationFrame(step);
+        }
+        inertiaRAF = requestAnimationFrame(step);
+    }
 
     function handleScroll(delta) {
         if (!initialized) return;
