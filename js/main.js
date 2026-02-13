@@ -41,6 +41,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     function updateWheelModeDisplay() {
         if (wheelMode === 'SPEED') {
             wheelModeDisplay.innerText = `x${audioEngine.playbackRate.toFixed(1)}`;
+        } else if (wheelMode === 'CUE') {
+            wheelModeDisplay.innerText = `CUE(${audioEngine.markers.length})`;
         } else {
             wheelModeDisplay.innerText = 'SCRUB';
         }
@@ -120,6 +122,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             audioEngine.audioBuffer = await audioEngine.audioCtx.decodeAudioData(arrayBuffer);
             audioEngine.duration = tape.duration;
             audioEngine.pausedAt = 0;
+            // Load cue markers for this tape
+            audioEngine.markers = loadMarkersForTape(selectedTapeId);
             toggleLibrary(false);
             statusText.innerText = "LOADED";
             appContainer.className = 'state-paused';
@@ -452,6 +456,21 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
 
+        // DECK MODE: CUE mode — drop or remove marker
+        if (wheelMode === 'CUE' && audioEngine.audioBuffer) {
+            const current = audioEngine.getCurrentTime();
+            if (audioEngine.addMarker(current)) {
+                statusText.innerText = 'CUE SET';
+            } else {
+                // Marker already nearby — remove it
+                audioEngine.removeNearestMarker(current);
+                statusText.innerText = 'CUE DEL';
+            }
+            saveMarkersForTape(selectedTapeId, audioEngine.markers);
+            updateWheelModeDisplay();
+            return;
+        }
+
         // DECK MODE: Play / Pause toggle
         if (audioEngine.audioBuffer) {
             if (audioEngine.isPlaying) {
@@ -462,10 +481,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
-    // Long press side button → toggle wheel mode
+    // Long press side button → cycle wheel mode
     window.addEventListener('longPressStart', () => {
         if (currentMode === 'DECK' && !audioEngine.isRecording) {
-            wheelMode = (wheelMode === 'SCRUB') ? 'SPEED' : 'SCRUB';
+            const modes = ['SCRUB', 'SPEED', 'CUE'];
+            const idx = modes.indexOf(wheelMode);
+            wheelMode = modes[(idx + 1) % modes.length];
             updateWheelModeDisplay();
             statusText.innerText = `${wheelMode} MODE`;
             const originalColor = wheelModeDisplay.style.color;
@@ -541,13 +562,80 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         if (currentMode === 'DECK') {
-            if (audioEngine.isPlaying || audioEngine.pausedAt > 0 || audioEngine.audioBuffer) {
-                audioEngine.manipulate(delta, wheelMode);
-                updateStatusForScrub();
+            if (audioEngine.audioBuffer) {
+                if (wheelMode === 'SCRUB') {
+                    handleScrubWheel(delta);
+                } else if (wheelMode === 'CUE') {
+                    handleCueWheel(delta);
+                } else {
+                    audioEngine.manipulate(delta, 'SPEED');
+                    updateStatusForScrub();
+                }
             }
         } else if (currentMode === 'LIBRARY') {
             tapeListContainer.scrollTop += (delta * -30);
         }
+    }
+
+    // --- Jog-wheel audio scrub ---
+    const SCRUB_STEP = 0.1; // 100ms of audio per wheel notch
+    let scrubTimeoutId = null;
+
+    function handleScrubWheel(delta) {
+        if (!audioEngine.audioBuffer) return;
+
+        const current = audioEngine.getCurrentTime();
+        let target = current + (delta * SCRUB_STEP);
+        target = Math.max(0, Math.min(audioEngine.duration, target));
+
+        // Play audio snippet from new position (also pauses normal playback)
+        audioEngine.scrubPlay(target, 0.15);
+
+        statusText.innerText = 'SCRUB';
+        if (scrubTimeoutId) clearTimeout(scrubTimeoutId);
+        scrubTimeoutId = setTimeout(() => {
+            if (!audioEngine.isPlaying && !audioEngine.isRecording) {
+                statusText.innerText = 'PAUSED';
+            }
+        }, 800);
+    }
+
+    // --- CUE wheel: jump between markers ---
+    function handleCueWheel(delta) {
+        if (!audioEngine.audioBuffer) return;
+
+        const current = audioEngine.getCurrentTime();
+        let target;
+
+        if (delta > 0) {
+            target = audioEngine.nextMarker(current);
+        } else {
+            target = audioEngine.prevMarker(current);
+        }
+
+        if (target !== null) {
+            audioEngine.scrubPlay(target, 0.3);
+            statusText.innerText = `CUE ${formatTime(target)}`;
+        } else {
+            statusText.innerText = delta > 0 ? 'END' : 'START';
+        }
+        updateWheelModeDisplay();
+    }
+
+    // --- Marker persistence (localStorage keyed by tape ID) ---
+    function saveMarkersForTape(tapeId, markers) {
+        if (!tapeId) return;
+        try {
+            localStorage.setItem(`r1_markers_${tapeId}`, JSON.stringify(markers));
+        } catch(e) {}
+    }
+
+    function loadMarkersForTape(tapeId) {
+        if (!tapeId) return [];
+        try {
+            const data = localStorage.getItem(`r1_markers_${tapeId}`);
+            return data ? JSON.parse(data) : [];
+        } catch(e) { return []; }
     }
 
     function updateStatusForScrub() {
@@ -578,6 +666,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         audioEngine.audioBuffer = null;
         audioEngine.duration = 0;
         audioEngine.playStartTime = 0;
+        audioEngine.clearMarkers();
         toggleLibrary(false);
         statusText.innerText = "NEW TAPE";
         appContainer.className = 'state-idle';

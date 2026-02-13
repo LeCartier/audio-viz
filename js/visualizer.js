@@ -45,9 +45,13 @@ class Visualizer {
 
         this.drawReel(this.centerX, this.centerY, this.maxRadius, rotationAngle);
 
-        // Draw progress arc around the reel
-        if (duration > 0) {
+        // Draw progress arc around the reel (only when not recording and there's audio)
+        if (duration > 0 && !this.audioEngine.isRecording) {
             this.drawProgressArc(this.centerX, this.centerY, this.maxRadius + 6, currentTime, duration);
+            // Draw cue markers on the arc
+            if (this.audioEngine.markers && this.audioEngine.markers.length > 0) {
+                this.drawMarkers(this.centerX, this.centerY, this.maxRadius + 6, this.audioEngine.markers, duration);
+            }
         }
 
         // Time position text at the bottom
@@ -140,6 +144,37 @@ class Visualizer {
         ctx.arc(x + Math.cos(headAngle) * radius, y + Math.sin(headAngle) * radius, 4, 0, Math.PI * 2);
         ctx.fillStyle = '#fff';
         ctx.fill();
+    }
+
+    drawMarkers(x, y, radius, markers, duration) {
+        if (!markers || markers.length === 0 || duration <= 0) return;
+        const ctx = this.ctx;
+        const startAngle = -Math.PI / 2;
+        const fullAngle = Math.PI * 2;
+
+        markers.forEach(marker => {
+            const progress = Math.min(1, marker.time / duration);
+            const angle = startAngle + fullAngle * progress;
+
+            // Tick line radiating outward
+            const innerR = radius - 5;
+            const outerR = radius + 5;
+            ctx.beginPath();
+            ctx.moveTo(x + Math.cos(angle) * innerR, y + Math.sin(angle) * innerR);
+            ctx.lineTo(x + Math.cos(angle) * outerR, y + Math.sin(angle) * outerR);
+            ctx.strokeStyle = '#ffcc00';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // Small dot at the tick
+            ctx.beginPath();
+            ctx.arc(x + Math.cos(angle) * radius, y + Math.sin(angle) * radius, 2.5, 0, Math.PI * 2);
+            ctx.fillStyle = '#ffcc00';
+            ctx.shadowBlur = 3;
+            ctx.shadowColor = '#ffcc00';
+            ctx.fill();
+            ctx.shadowBlur = 0;
+        });
     }
 
     fmtTime(s) {

@@ -22,6 +22,12 @@ class AudioEngine {
         this.punchInOffset = -1;  // -1 = no punch-in
         this.preBuffer = null;
 
+        // Scrub playback (jog wheel)
+        this.scrubSource = null;
+
+        // Cue markers
+        this.markers = [];
+
         // Callbacks for UI updates
         this.onStateChange = null; // (state) => {}
         this.onTimeUpdate = null;  // (currentTime, duration) => {}
@@ -76,7 +82,7 @@ class AudioEngine {
             }
 
             this.duration = this.audioBuffer.duration;
-            this.pausedAt = 0;
+            this.pausedAt = this.duration; // Stay at the end of what was recorded
             this.punchInOffset = -1;
             this.preBuffer = null;
 
@@ -127,14 +133,25 @@ class AudioEngine {
         this.analyser.connect(this.audioCtx.destination);
 
         this.sourceNode.onended = () => {
-            // Only trigger if we didn't stop it manually (logic handled in stop())
-            if (this.isPlaying) { 
-                this.pause(); 
+            if (this.isPlaying) {
+                // Natural end of playback — freeze at end
+                this.sourceNode = null;
+                this.pausedAt = this.duration;
+                this.isPlaying = false;
+                this.stopPlaybackTicker();
+                if (this.onTimeUpdate) this.onTimeUpdate(this.duration, this.duration);
+                if (this.onStateChange) this.onStateChange('paused');
             }
         };
 
         // Handle resuming from paused position
         const offset = this.pausedAt;
+        // If at the very end, do nothing — user must scrub back or record
+        if (offset >= this.duration - 0.01) {
+            this.sourceNode.disconnect();
+            this.sourceNode = null;
+            return;
+        }
         this.sourceNode.start(0, offset);
         this.playStartTime = this.audioCtx.currentTime - (offset / this.playbackRate);
         
@@ -251,6 +268,101 @@ class AudioEngine {
             return this.audioCtx.currentTime - this.recordingStartTime;
         }
         return this.pausedAt;
+    }
+
+    // --- Jog-wheel scrub: play short audio snippet at position ---
+    scrubPlay(position, snippetDuration = 0.15) {
+        if (!this.audioBuffer) return;
+
+        // Stop normal playback if active
+        if (this.isPlaying) {
+            this.pause();
+        }
+
+        // Stop any existing scrub source
+        if (this.scrubSource) {
+            try {
+                this.scrubSource.onended = null;
+                this.scrubSource.stop();
+                this.scrubSource.disconnect();
+            } catch(e) {}
+            this.scrubSource = null;
+        }
+
+        // Clamp position
+        position = Math.max(0, Math.min(this.duration - 0.01, position));
+
+        // Create a short playback snippet
+        this.scrubSource = this.audioCtx.createBufferSource();
+        this.scrubSource.buffer = this.audioBuffer;
+        this.scrubSource.connect(this.analyser);
+        this.analyser.connect(this.audioCtx.destination);
+
+        const self = this;
+        const src = this.scrubSource;
+        this.scrubSource.onended = function() {
+            if (self.scrubSource === src) {
+                try { self.scrubSource.disconnect(); } catch(e) {}
+                self.scrubSource = null;
+            }
+        };
+
+        // Play a short snippet from position
+        const remaining = this.duration - position;
+        const dur = Math.min(snippetDuration, Math.max(0, remaining));
+        if (dur > 0.01) {
+            this.scrubSource.start(0, position, dur);
+        }
+
+        // Update position
+        this.pausedAt = position;
+        if (this.onTimeUpdate) this.onTimeUpdate(position, this.duration);
+    }
+
+    // --- Cue marker management ---
+    addMarker(time) {
+        const THRESHOLD = 0.5;
+        if (this.markers.some(m => Math.abs(m.time - time) < THRESHOLD)) return false;
+        this.markers.push({ time: time, id: Date.now() });
+        this.markers.sort((a, b) => a.time - b.time);
+        return true;
+    }
+
+    removeNearestMarker(time) {
+        if (this.markers.length === 0) return false;
+        const THRESHOLD = 1.0;
+        let closest = -1;
+        let closestDist = Infinity;
+        this.markers.forEach((m, i) => {
+            const dist = Math.abs(m.time - time);
+            if (dist < closestDist) {
+                closestDist = dist;
+                closest = i;
+            }
+        });
+        if (closest >= 0 && closestDist < THRESHOLD) {
+            this.markers.splice(closest, 1);
+            return true;
+        }
+        return false;
+    }
+
+    nextMarker(fromTime) {
+        for (const m of this.markers) {
+            if (m.time > fromTime + 0.2) return m.time;
+        }
+        return null;
+    }
+
+    prevMarker(fromTime) {
+        for (let i = this.markers.length - 1; i >= 0; i--) {
+            if (this.markers[i].time < fromTime - 0.2) return this.markers[i].time;
+        }
+        return null;
+    }
+
+    clearMarkers() {
+        this.markers = [];
     }
 
     // --- Punch-in buffer merging ---
