@@ -144,7 +144,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         input.focus();
         input.select();
 
+        // Keep the input visible above the on-screen keyboard
+        const scrollInputIntoView = () => {
+            setTimeout(() => {
+                input.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            }, 100);
+        };
+        scrollInputIntoView();
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', scrollInputIntoView);
+        }
+
         const commitRename = async () => {
+            if (window.visualViewport) {
+                window.visualViewport.removeEventListener('resize', scrollInputIntoView);
+            }
             const newName = input.value.trim() || tape.name || 'Untitled Tape';
             await storage.updateRecordingName(tape.id, newName);
             input.remove();

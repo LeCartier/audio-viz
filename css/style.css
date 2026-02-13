@@ -72,7 +72,7 @@ body {
 .state-recording .tape-deck::after {
     content: '● REC';
     position: absolute;
-    bottom: 35px;
+    bottom: 8px;
     left: 50%;
     transform: translateX(-50%);
     color: #f00;
@@ -87,7 +87,7 @@ body {
 .state-idle .tape-deck::after {
     content: 'TAP TO RECORD';
     position: absolute;
-    bottom: 35px;
+    bottom: 8px;
     left: 50%;
     transform: translateX(-50%);
     color: #555;
@@ -100,7 +100,7 @@ body {
 .state-paused .tape-deck::after {
     content: '\25AE PAUSED';
     position: absolute;
-    bottom: 35px;
+    bottom: 8px;
     left: 50%;
     transform: translateX(-50%);
     color: #888;

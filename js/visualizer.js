@@ -56,13 +56,11 @@ class Visualizer {
             }
         }
 
-        // Time position text at the bottom
+        // Time position text curved along the bottom of the arc
         if (arcDuration > 0) {
             const pct = Math.min(100, (currentTime / arcDuration) * 100);
-            ctx.fillStyle = '#666';
-            ctx.font = '9px Courier New';
-            ctx.textAlign = 'center';
-            ctx.fillText(`${this.fmtTime(currentTime)} / ${this.fmtTime(arcDuration)}  (${pct.toFixed(0)}%)`, this.centerX, this.height - 20);
+            const label = `${this.fmtTime(currentTime)} / ${this.fmtTime(arcDuration)}  (${pct.toFixed(0)}%)`;
+            this.drawCurvedText(label, this.centerX, this.centerY, this.maxRadius + 20, '#666', '9px Courier New');
         }
     }
 
@@ -177,6 +175,49 @@ class Visualizer {
             ctx.fill();
             ctx.shadowBlur = 0;
         });
+    }
+
+    drawCurvedText(text, cx, cy, radius, color, font) {
+        const ctx = this.ctx;
+        ctx.save();
+        ctx.font = font;
+        ctx.fillStyle = color;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        // Measure total angular span of the text
+        const charWidths = [];
+        let totalWidth = 0;
+        for (let i = 0; i < text.length; i++) {
+            const w = ctx.measureText(text[i]).width;
+            charWidths.push(w);
+            totalWidth += w;
+        }
+
+        // Angular span: map total pixel width to arc length
+        const totalAngle = totalWidth / radius;
+
+        // Center the text at the bottom of the circle (Math.PI / 2 = 6 o'clock)
+        let angle = Math.PI / 2 - totalAngle / 2;
+
+        for (let i = 0; i < text.length; i++) {
+            const halfChar = charWidths[i] / 2 / radius;
+            angle += halfChar;
+
+            const x = cx + Math.cos(angle) * radius;
+            const y = cy + Math.sin(angle) * radius;
+
+            ctx.save();
+            ctx.translate(x, y);
+            // Rotate so char is upright tangent to arc, text reads left-to-right
+            ctx.rotate(angle + Math.PI / 2);
+            ctx.fillText(text[i], 0, 0);
+            ctx.restore();
+
+            angle += halfChar;
+        }
+
+        ctx.restore();
     }
 
     fmtTime(s) {
