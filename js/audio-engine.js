@@ -118,6 +118,10 @@ class AudioEngine {
     stopRecording() {
         if (!this.isRecording) return;
 
+        // Snapshot the current recording position BEFORE changing state,
+        // so getCurrentTime() doesn't jump back to the old pausedAt.
+        this.pausedAt = this.getCurrentTime();
+
         // Disconnect mic from analyser to prevent feedback
         if (this.micSourceNode) {
             this.micSourceNode.disconnect();
